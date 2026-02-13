@@ -1,0 +1,5 @@
+data/raw/
+*.csv
+.env
+__pycache__/
+.idea/
