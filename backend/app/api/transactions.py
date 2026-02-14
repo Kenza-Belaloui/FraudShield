@@ -4,6 +4,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
+from typing import Optional, Dict
 
 from app.core.deps import get_db, get_current_user
 from app import models
@@ -21,6 +22,7 @@ class TransactionCreate(BaseModel):
     devise: str = "EUR"
     canal: str
     statut: str
+    ml_features: Optional[Dict[str, float]] = None  # Time + V1..V28 (optionnel)
 
 
 @router.get("")
@@ -114,7 +116,8 @@ def create_transaction(
     decision = evaluate_transaction(
         montant=float(t.montant),
         canal=t.canal,
-        pays=pays
+        pays=pays,
+        ml_features=data.ml_features
     )
 
     # 4️⃣ Créer prédictions

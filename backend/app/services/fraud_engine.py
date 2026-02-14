@@ -1,7 +1,9 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict
+import pandas as pd
 
-from app.services.scoring import score_transaction_mock
+from app.ml.model_loader import load_models
+from app.services.scoring import score_transaction_mock  # fallback
 
 
 @dataclass
@@ -9,29 +11,76 @@ class FraudDecision:
     score_xgb: float
     score_iforest: float
     score_final: float
-    criticite: str          # FAIBLE | MOYEN | ELEVE
+    criticite: str
     raison: str
-    modele_principal: str   # "XGBoost" (pour tracer idMod dans ALERTE)
+    modele_principal: str
+
+
+def _to_criticite(score_final: float) -> str:
+    if score_final < 0.4:
+        return "FAIBLE"
+    if score_final < 0.7:
+        return "MOYEN"
+    return "ELEVE"
 
 
 def evaluate_transaction(
     montant: float,
     canal: str,
-    pays: Optional[str]
+    pays: Optional[str],
+    ml_features: Optional[Dict[str, float]] = None
 ) -> FraudDecision:
     """
-    Moteur anti-fraude (version MOCK).
-    Plus tard, cette fonction appellera les vrais modèles :
-    - XGBoost (supervisé)
-    - IsolationForest (anomalies)
+    Si ml_features (Time + V1..V28) est fourni -> vrais modèles (XGBoost + IF).
+    Sinon -> fallback mock (en attendant feature store comportemental).
     """
-    res = score_transaction_mock(montant=montant, canal=canal, pays=pays)
+    # ---------- Cas 1 : Pas de features Kaggle -> fallback ----------
+    if not ml_features:
+        res = score_transaction_mock(montant=montant, canal=canal, pays=pays)
+        return FraudDecision(
+            score_xgb=res.score_xgb,
+            score_iforest=res.score_iforest,
+            score_final=res.score_final,
+            criticite=res.criticite,
+            raison="Fallback mock (pas de ml_features)",
+            modele_principal="XGBoost"
+        )
+
+    # ---------- Cas 2 : Features Kaggle -> vrais modèles ----------
+    iso, xgb, scaler_iso, scaler_xgb = load_models()
+
+    # Construire une ligne avec Time + V1..V28 + Amount
+    row = {"Time": float(ml_features.get("Time", 0.0))}
+    for i in range(1, 29):
+        row[f"V{i}"] = float(ml_features.get(f"V{i}", 0.0))
+    row["Amount"] = float(montant)
+
+    df = pd.DataFrame([row])
+
+    # Préparation identique au training: Amount_scaled + drop Amount
+    df_iso = df.copy()
+    df_iso["Amount_scaled"] = scaler_iso.transform(df_iso[["Amount"]])
+    df_iso = df_iso.drop(columns=["Amount"])
+
+    df_xgb = df.copy()
+    df_xgb["Amount_scaled"] = scaler_xgb.transform(df_xgb[["Amount"]])
+    df_xgb = df_xgb.drop(columns=["Amount"])
+
+    # XGBoost: proba fraude
+    score_xgb = float(xgb.predict_proba(df_xgb)[:, 1][0])
+
+    # IsolationForest: -1 anomalie / 1 normal
+    pred_if = int(iso.predict(df_iso)[0])
+    score_iforest = 1.0 if pred_if == -1 else 0.0  # simple: anomalie=1, normal=0
+
+    score_final = max(score_xgb, score_iforest)
+    criticite = _to_criticite(score_final)
 
     return FraudDecision(
-        score_xgb=res.score_xgb,
-        score_iforest=res.score_iforest,
-        score_final=res.score_final,
-        criticite=res.criticite,
-        raison=res.raison,
+        score_xgb=score_xgb,
+        score_iforest=score_iforest,
+        score_final=score_final,
+        criticite=criticite,
+        raison="Scoring réel (XGBoost + IsolationForest) via features Kaggle",
         modele_principal="XGBoost"
     )

@@ -3,6 +3,10 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 import joblib
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
+from xgboost import XGBClassifier
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_PATH = BASE_DIR / "data" / "raw" / "creditcard.csv"
@@ -42,6 +46,37 @@ def train_isolation_forest(X: pd.DataFrame):
     iso.fit(X)
     return iso
 
+def prepare_supervised(df: pd.DataFrame):
+    X = df.drop(columns=["Class"]).copy()
+    y = df["Class"].copy()
+
+    scaler = StandardScaler()
+    X["Amount_scaled"] = scaler.fit_transform(X[["Amount"]])
+    X = X.drop(columns=["Amount"])
+
+    return X, y, scaler
+
+
+def train_xgboost(X_train, y_train):
+    # gestion déséquilibre (pro)
+    scale_pos_weight = (len(y_train) - y_train.sum()) / y_train.sum()
+
+    model = XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        eval_metric="auc",
+        scale_pos_weight=scale_pos_weight,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    model.fit(X_train, y_train)
+    return model
+
+
 
 if __name__ == "__main__":
     df = load_data()
@@ -62,3 +97,26 @@ if __name__ == "__main__":
     joblib.dump(scaler, MODELS_DIR / "scaler_amount.joblib")
 
     print(f"💾 Saved: {MODELS_DIR / 'isolation_forest.joblib'}")
+    print("\n🚀 Training XGBoost...")
+
+    X_all, y_all, scaler_sup = prepare_supervised(df)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_all, y_all,
+        test_size=0.2,
+        stratify=y_all,
+        random_state=42
+    )
+
+    xgb_model = train_xgboost(X_train, y_train)
+
+    # évaluation pro
+    y_pred_proba = xgb_model.predict_proba(X_test)[:, 1]
+    auc = roc_auc_score(y_test, y_pred_proba)
+    print(f"🎯 ROC-AUC: {auc:.4f}")
+
+    # sauvegarde
+    joblib.dump(xgb_model, MODELS_DIR / "xgboost_fraud.joblib")
+    joblib.dump(scaler_sup, MODELS_DIR / "scaler_amount_supervised.joblib")
+
+    print(f"💾 Saved: {MODELS_DIR / 'xgboost_fraud.joblib'}")
