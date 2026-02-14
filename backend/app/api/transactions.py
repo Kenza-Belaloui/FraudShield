@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.core.deps import get_db, get_current_user
 from app import models
-from app.services.scoring import score_transaction_mock
+from app.services.fraud_engine import evaluate_transaction
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -111,7 +111,7 @@ def create_transaction(
     pays = commercant.pays if commercant else None
 
     # 3️⃣ Scoring mock (2 modèles simulés)
-    res = score_transaction_mock(
+    decision = evaluate_transaction(
         montant=float(t.montant),
         canal=t.canal,
         pays=pays
@@ -121,7 +121,7 @@ def create_transaction(
     pred_xgb = models.PredictionModele(
         nom_modele="XGBoost",
         version_modele="mock-v1",
-        score_risque=res.score_xgb,
+        score_risque=decision.score_xgb,
         est_anomalie=False,
         seuil=0.7,
         idtransac=t.idtransac,
@@ -130,8 +130,8 @@ def create_transaction(
     pred_if = models.PredictionModele(
         nom_modele="IsolationForest",
         version_modele="mock-v1",
-        score_risque=res.score_iforest,
-        est_anomalie=(res.score_iforest >= 0.7),
+        score_risque=decision.score_iforest,
+        est_anomalie=(decision.score_iforest >= 0.7),
         seuil=0.7,
         idtransac=t.idtransac,
     )
@@ -143,9 +143,9 @@ def create_transaction(
 
     # 5️⃣ Créer 1 alerte par transaction
     alerte = models.Alerte(
-        criticite=res.criticite,
+        criticite=decision.criticite,
         statut="OUVERTE",
-        raison=res.raison,
+        raison=decision.raison,
         idtransac=t.idtransac,
         idmod=pred_xgb.idmod
     )
@@ -155,7 +155,8 @@ def create_transaction(
 
     return {
         "idTransac": str(t.idtransac),
-        "score_final": res.score_final,
-        "criticite": res.criticite,
+        "score_final": decision.score_final,
+        "criticite": decision.criticite,
         "message": "Transaction analysée (mock scoring)"
     }
+

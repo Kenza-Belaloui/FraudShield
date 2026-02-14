@@ -5,11 +5,13 @@ from app.db import SessionLocal
 from app import models
 from app.api.auth import router as auth_router
 from app.api.transactions import router as transactions_router
+from app.api.alerts import router as alerts_router
 
 app = FastAPI(title="FraudShield API", version="1.0.0")
 
 app.include_router(auth_router)
 app.include_router(transactions_router)
+app.include_router(alerts_router)
 
 # DB dependency
 def get_db():
