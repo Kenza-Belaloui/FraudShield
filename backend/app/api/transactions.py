@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, Dict
+from app.services.feature_store import compute_features
 
 from app.core.deps import get_db, get_current_user
 from app import models
@@ -122,6 +123,14 @@ def create_transaction(
         ml_features=data.ml_features
     )
 
+    features = compute_features(
+        db=db,
+        idclient=t.idclient,
+        idcarte=t.idcarte,
+        idcommercant=t.idcommercant,
+        tx_time=t.date_heure
+    )
+
     # 4️⃣ Créer prédictions
     pred_xgb = models.PredictionModele(
         nom_modele="XGBoost",
@@ -167,6 +176,7 @@ def create_transaction(
         "criticite": decision.criticite,
         "raison": decision.raison,
         "message": "Transaction analysée"
+        "features": features,
     }
 
 
