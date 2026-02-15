@@ -3,7 +3,7 @@ from typing import Optional, Dict
 import pandas as pd
 
 from app.ml.model_loader import load_models
-from app.services.scoring import score_transaction_mock  # fallback
+from app.services.scoring import score_transaction_mock
 
 
 @dataclass
@@ -30,11 +30,7 @@ def evaluate_transaction(
     pays: Optional[str],
     ml_features: Optional[Dict[str, float]] = None
 ) -> FraudDecision:
-    """
-    Si ml_features (Time + V1..V28) est fourni -> vrais modèles (XGBoost + IF).
-    Sinon -> fallback mock (en attendant feature store comportemental).
-    """
-    # ---------- Cas 1 : Pas de features Kaggle -> fallback ----------
+    # Si pas de features Kaggle => fallback (en attendant feature store comportemental)
     if not ml_features:
         res = score_transaction_mock(montant=montant, canal=canal, pays=pays)
         return FraudDecision(
@@ -46,10 +42,8 @@ def evaluate_transaction(
             modele_principal="XGBoost"
         )
 
-    # ---------- Cas 2 : Features Kaggle -> vrais modèles ----------
     iso, xgb, scaler_iso, scaler_xgb = load_models()
 
-    # Construire une ligne avec Time + V1..V28 + Amount
     row = {"Time": float(ml_features.get("Time", 0.0))}
     for i in range(1, 29):
         row[f"V{i}"] = float(ml_features.get(f"V{i}", 0.0))
@@ -57,7 +51,6 @@ def evaluate_transaction(
 
     df = pd.DataFrame([row])
 
-    # Préparation identique au training: Amount_scaled + drop Amount
     df_iso = df.copy()
     df_iso["Amount_scaled"] = scaler_iso.transform(df_iso[["Amount"]])
     df_iso = df_iso.drop(columns=["Amount"])
@@ -66,12 +59,10 @@ def evaluate_transaction(
     df_xgb["Amount_scaled"] = scaler_xgb.transform(df_xgb[["Amount"]])
     df_xgb = df_xgb.drop(columns=["Amount"])
 
-    # XGBoost: proba fraude
     score_xgb = float(xgb.predict_proba(df_xgb)[:, 1][0])
 
-    # IsolationForest: -1 anomalie / 1 normal
-    pred_if = int(iso.predict(df_iso)[0])
-    score_iforest = 1.0 if pred_if == -1 else 0.0  # simple: anomalie=1, normal=0
+    pred_if = int(iso.predict(df_iso)[0])  # -1 anomalie, 1 normal
+    score_iforest = 1.0 if pred_if == -1 else 0.0
 
     score_final = max(score_xgb, score_iforest)
     criticite = _to_criticite(score_final)
@@ -81,6 +72,6 @@ def evaluate_transaction(
         score_iforest=score_iforest,
         score_final=score_final,
         criticite=criticite,
-        raison="Scoring réel (XGBoost + IsolationForest) via features Kaggle",
+        raison="Scoring réel (XGBoost + IsolationForest)",
         modele_principal="XGBoost"
     )

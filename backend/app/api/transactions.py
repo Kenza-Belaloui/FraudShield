@@ -10,6 +10,8 @@ from app.core.deps import get_db, get_current_user
 from app import models
 from app.services.fraud_engine import evaluate_transaction
 
+ml_features: Optional[Dict[str, float]] = None
+
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
 
@@ -158,8 +160,13 @@ def create_transaction(
 
     return {
         "idTransac": str(t.idtransac),
-        "score_final": decision.score_final,
+        "mode": "REAL_ML" if data.ml_features else "MOCK",
+        "score_final": float(decision.score_final),
+        "score_xgb": float(decision.score_xgb),
+        "score_iforest": float(decision.score_iforest),
         "criticite": decision.criticite,
-        "message": "Transaction analysée (mock scoring)"
+        "raison": decision.raison,
+        "message": "Transaction analysée"
     }
+
 
