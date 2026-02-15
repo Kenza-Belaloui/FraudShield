@@ -6,6 +6,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy import Numeric
 
 from .db import Base
 
@@ -46,6 +47,10 @@ class Client(Base):
     reference_externe = Column(String(80), unique=True, nullable=True)
     segment = Column(String(50), nullable=True)
     date_creation = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    pays_residence = Column(String(80), nullable=True)
+    profession = Column(String(80), nullable=True)
+    revenu_mensuel_estime = Column(Numeric(12, 2), nullable=True)
+    plafond_carte_journalier = Column(Numeric(12, 2), nullable=True)
 
     cartes = relationship("Carte", back_populates="client")
     transactions = relationship("Transaction", back_populates="client")
