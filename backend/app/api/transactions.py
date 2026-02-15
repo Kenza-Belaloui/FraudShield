@@ -7,6 +7,7 @@ from uuid import UUID
 from typing import Optional, Dict
 from app.services.feature_store import compute_features
 
+
 from app.core.deps import get_db, get_current_user
 from app import models
 from app.services.fraud_engine import evaluate_transaction
@@ -107,6 +108,13 @@ def create_transaction(
     db.add(t)
     db.commit()
     db.refresh(t)
+    features = compute_features(
+        db=db,
+        idclient=t.idclient,
+        idcarte=t.idcarte,
+        idcommercant=t.idcommercant,
+        tx_time=t.date_heure
+    )
 
     # 2️⃣ Récupérer pays du commerçant
     commercant = db.query(models.Commercant).filter(
@@ -175,8 +183,8 @@ def create_transaction(
         "score_iforest": float(decision.score_iforest),
         "criticite": decision.criticite,
         "raison": decision.raison,
-        "message": "Transaction analysée"
         "features": features,
+        "message": "Transaction analysée"
     }
 
 
