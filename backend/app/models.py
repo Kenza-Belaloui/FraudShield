@@ -7,6 +7,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy import Numeric
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy import Text
 
 from .db import Base
 
@@ -104,6 +106,8 @@ class Transaction(Base):
     predictions = relationship("PredictionModele", back_populates="transaction")
     alerte = relationship("Alerte", back_populates="transaction", uselist=False)
 
+    features = Column(JSONB, nullable=True)
+    reason_codes = Column(ARRAY(Text), nullable=True)
 
 # ---------- IA ----------
 class PredictionModele(Base):

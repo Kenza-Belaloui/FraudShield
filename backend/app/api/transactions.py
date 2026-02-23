@@ -1,21 +1,24 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
-from typing import Optional, Dict
-from app.services.feature_store import compute_features
+from typing import Optional, Dict, Any, List
 
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from app.core.deps import get_db, get_current_user
 from app import models
 from app.services.fraud_engine import evaluate_transaction
-
-ml_features: Optional[Dict[str, float]] = None
+from app.services.feature_store import compute_behavior_features
+from app.services.reason_codes import build_reason_codes
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
+
+# ==========
+# Schemas
+# ==========
 
 class TransactionCreate(BaseModel):
     idClient: UUID
@@ -26,8 +29,11 @@ class TransactionCreate(BaseModel):
     devise: str = "EUR"
     canal: str
     statut: str
-    ml_features: Optional[Dict[str, float]] = None  # Time + V1..V28 (optionnel)
 
+
+# ==========
+# Routes
+# ==========
 
 @router.get("")
 def list_transactions(
@@ -36,12 +42,8 @@ def list_transactions(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    if page < 1:
-        page = 1
-    if page_size < 1:
-        page_size = 20
-    if page_size > 100:
-        page_size = 100
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
 
     q = db.query(models.Transaction).order_by(desc(models.Transaction.date_heure))
     total = q.count()
@@ -49,10 +51,10 @@ def list_transactions(
 
     items = []
     for t in rows:
-        alerte = t.alerte
-        score_final = None
+        alerte = getattr(t, "alerte", None)
 
-        if alerte and alerte.prediction_principale:
+        score_final = None
+        if alerte and getattr(alerte, "prediction_principale", None):
             score_final = float(alerte.prediction_principale.score_risque)
 
         items.append({
@@ -65,28 +67,21 @@ def list_transactions(
             "client": {
                 "nom": t.client.nom,
                 "prenom": t.client.prenom
-            },
+            } if getattr(t, "client", None) else None,
             "commercant": {
                 "nom": t.commercant.nom
-            },
+            } if getattr(t, "commercant", None) else None,
             "alerte": {
                 "criticite": alerte.criticite if alerte else None,
                 "statut": alerte.statut if alerte else None,
                 "score_final": score_final
-            }
+            },
+            "features": getattr(t, "features", None),
+            "reason_codes": getattr(t, "reason_codes", None),
         })
 
-    return {
-        "items": items,
-        "page": page,
-        "page_size": page_size,
-        "total": total
-    }
+    return {"items": items, "page": page, "page_size": page_size, "total": total}
 
-
-# ===============================
-#   CREATE TRANSACTION + SCORING
-# ===============================
 
 @router.post("")
 def create_transaction(
@@ -94,7 +89,13 @@ def create_transaction(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # 1️⃣ Créer la transaction
+    # 0) récupérer pays marchand (utile pour features + scoring)
+    commercant = db.query(models.Commercant).filter(
+        models.Commercant.idcommercant == data.idCommercant
+    ).first()
+    pays = commercant.pays if commercant else None
+
+    # 1) créer la transaction
     t = models.Transaction(
         date_heure=data.date_heure,
         montant=data.montant,
@@ -108,53 +109,56 @@ def create_transaction(
     db.add(t)
     db.commit()
     db.refresh(t)
-    features = compute_features(
+
+    # 2) feature store comportemental (DB -> features)
+    features: Dict[str, Any] = compute_behavior_features(
         db=db,
-        idclient=t.idclient,
-        idcarte=t.idcarte,
-        idcommercant=t.idcommercant,
-        tx_time=t.date_heure
+        client_id=t.idclient,
+        carte_id=t.idcarte,
+        commercant_id=t.idcommercant,
+        montant=float(t.montant),
+        date_heure=t.date_heure,
+        commercant_pays=pays,
     )
 
-    # 2️⃣ Récupérer pays du commerçant
-    commercant = db.query(models.Commercant).filter(
-        models.Commercant.idcommercant == t.idcommercant
-    ).first()
-
-    pays = commercant.pays if commercant else None
-
-    # 3️⃣ Scoring mock (2 modèles simulés)
+    # 3) scoring (réel: XGBoost + IsolationForest)
     decision = evaluate_transaction(
         montant=float(t.montant),
         canal=t.canal,
         pays=pays,
-        ml_features=data.ml_features
+        ml_features=features,   # IMPORTANT: on passe les features !
     )
 
-    features = compute_features(
-        db=db,
-        idclient=t.idclient,
-        idcarte=t.idcarte,
-        idcommercant=t.idcommercant,
-        tx_time=t.date_heure
+    # 4) reason codes (explicabilité)
+    reason_codes: List[str] = build_reason_codes(
+        features=features,
+        score_xgb=float(decision.score_xgb),
+        score_iforest=float(decision.score_iforest),
     )
 
-    # 4️⃣ Créer prédictions
+    # 5) stocker features + reason_codes dans la DB
+    # (nécessite que Transaction ait des colonnes JSON: features, reason_codes)
+    t.features = features
+    t.reason_codes = reason_codes
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+
+    # 6) créer les prédictions (2 lignes)
     pred_xgb = models.PredictionModele(
         nom_modele="XGBoost",
-        version_modele="mock-v1",
-        score_risque=decision.score_xgb,
+        version_modele="real-v1",
+        score_risque=float(decision.score_xgb),
         est_anomalie=False,
-        seuil=0.7,
+        seuil=None,  # optionnel
         idtransac=t.idtransac,
     )
-
     pred_if = models.PredictionModele(
         nom_modele="IsolationForest",
-        version_modele="mock-v1",
-        score_risque=decision.score_iforest,
-        est_anomalie=(decision.score_iforest >= 0.7),
-        seuil=0.7,
+        version_modele="real-v1",
+        score_risque=float(decision.score_iforest),
+        est_anomalie=(float(decision.score_iforest) >= 0.5),
+        seuil=None,
         idtransac=t.idtransac,
     )
 
@@ -163,28 +167,26 @@ def create_transaction(
     db.commit()
     db.refresh(pred_xgb)
 
-    # 5️⃣ Créer 1 alerte par transaction
+    # 7) créer l’alerte (1 par transaction)
     alerte = models.Alerte(
         criticite=decision.criticite,
         statut="OUVERTE",
         raison=decision.raison,
         idtransac=t.idtransac,
-        idmod=pred_xgb.idmod
+        idmod=pred_xgb.idmod,   # modèle principal
     )
-
     db.add(alerte)
     db.commit()
 
     return {
         "idTransac": str(t.idtransac),
-        "mode": "REAL_ML" if data.ml_features else "MOCK",
+        "mode": "REAL_ML",
         "score_final": float(decision.score_final),
         "score_xgb": float(decision.score_xgb),
         "score_iforest": float(decision.score_iforest),
         "criticite": decision.criticite,
         "raison": decision.raison,
+        "reason_codes": reason_codes,
         "features": features,
-        "message": "Transaction analysée"
+        "message": "Transaction analysée",
     }
-
-
