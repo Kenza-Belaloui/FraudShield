@@ -1,6 +1,5 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+﻿import React, { createContext, useContext, useMemo, useState } from "react";
 
-type AuthState = { token: string | null };
 type AuthCtx = {
   token: string | null;
   setToken: (t: string | null) => void;
