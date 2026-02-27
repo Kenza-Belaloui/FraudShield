@@ -40,3 +40,20 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Force glass inputs FraudShield even if some global CSS sets white inputs */
+.fs-input {
+  background: rgba(28, 75, 121, 0.15) !important;
+  color: #fff !important;
+}
+
+/* Autofill */
+.fs-input:-webkit-autofill,
+.fs-input:-webkit-autofill:hover,
+.fs-input:-webkit-autofill:focus,
+.fs-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px rgba(28, 75, 121, 0.15) inset !important;
+  box-shadow: 0 0 0 1000px rgba(28, 75, 121, 0.15) inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
+}

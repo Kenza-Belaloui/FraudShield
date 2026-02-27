@@ -3,39 +3,53 @@ import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { TransactionsPage } from "./pages/TransactionsPage";
-import { RequireAuth } from "./auth/RequireAuth";
+import { UsersPage } from "./pages/UsersPage";
+import { ProtectedRoute } from "./auth/ProtectedRoute";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<LoginPage />} />
 
         <Route
           path="/dashboard"
           element={
-            <RequireAuth>
+            <ProtectedRoute>
               <DashboardPage />
-            </RequireAuth>
+            </ProtectedRoute>
           }
         />
+
         <Route
           path="/alerts"
           element={
-            <RequireAuth>
+            <ProtectedRoute>
               <AlertsPage />
-            </RequireAuth>
+            </ProtectedRoute>
           }
         />
+
         <Route
           path="/transactions"
           element={
-            <RequireAuth>
+            <ProtectedRoute>
               <TransactionsPage />
-            </RequireAuth>
+            </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/users"
+          element={
+            <ProtectedRoute>
+              <UsersPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   );

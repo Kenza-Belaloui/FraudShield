@@ -1,33 +1,63 @@
-﻿import React, { createContext, useContext, useMemo, useState } from "react";
+﻿import React, { createContext, useContext, useEffect, useState } from "react";
+import { login as apiLogin, me as apiMe } from "../api/auth";
+
+type User = { nom?: string; prenom?: string; email?: string };
 
 type AuthCtx = {
   token: string | null;
-  setToken: (t: string | null) => void;
+  user: User | null;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
 
-const AuthContext = createContext<AuthCtx | null>(null);
+const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(
-    localStorage.getItem("access_token")
-  );
+  const [token, setToken] = useState<string | null>(localStorage.getItem("access_token"));
+  const [user, setUser] = useState<User | null>(null);
 
-  const setToken = (t: string | null) => {
-    setTokenState(t);
-    if (t) localStorage.setItem("access_token", t);
-    else localStorage.removeItem("access_token");
-  };
+  useEffect(() => {
+    async function loadMe() {
+      if (!token) {
+        setUser(null);
+        return;
+      }
+      try {
+        const u = await apiMe();
+        setUser(u);
+      } catch {
+        // si pas /auth/me, fallback
+        setUser({ nom: "Admin", prenom: "" });
+      }
+    }
+    loadMe();
+  }, [token]);
 
-  const logout = () => setToken(null);
+  async function login(email: string, password: string) {
+    const res = await apiLogin({ email, password });
+    localStorage.setItem("access_token", res.access_token);
+    setToken(res.access_token);
 
-  const value = useMemo(() => ({ token, setToken, logout }), [token]);
+    // charger user
+    try {
+      const u = await apiMe();
+      setUser(u);
+    } catch {
+      setUser({ nom: "Admin", prenom: "" });
+    }
+  }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  function logout() {
+    localStorage.removeItem("access_token");
+    setToken(null);
+    setUser(null);
+  }
+
+  return <Ctx.Provider value={{ token, user, login, logout }}>{children}</Ctx.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
+  const v = useContext(Ctx);
+  if (!v) throw new Error("useAuth must be used within AuthProvider");
+  return v;
 }

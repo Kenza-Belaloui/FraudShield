@@ -1,3 +1,24 @@
+import { useSearchParams } from "react-router-dom";
+import { AppShell } from "../layout/AppShell";
+import { useAuth } from "../auth/AuthContext";
+
 export function TransactionsPage() {
-  return <div className="p-6 text-white">Transactions (à faire selon Figma)</div>;
+  const { user, logout } = useAuth();
+  const [sp] = useSearchParams();
+  const q = sp.get("q") || "";
+
+  return (
+    <AppLayout user={user || undefined} onLogout={logout}>
+      <div className="pt-6">
+        <h1 className="text-[22px] font-bold mb-2">Transactions</h1>
+        <div className="text-white/60 mb-4">
+          Recherche: <span className="text-white/85">{q || "—"}</span>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white/70">
+          Page Transactions prête. Ensuite on branche /transactions + affichage table + détails.
+        </div>
+      </div>
+    </AppLayout>
+  );
 }

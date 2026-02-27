@@ -1,94 +1,165 @@
+// src/pages/LoginPage.tsx
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api/auth";
-import { useAuth } from "../auth/AuthContext";
+import axios from "axios";
+import bg from "../assets/bg-login.png";
+import logo from "../assets/logo-shield.png";
 
 export function LoginPage() {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const { setToken } = useAuth();
-  const nav = useNavigate();
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr(null);
+async function handleLogin() {
+  try {
+    setError(null);
     setLoading(true);
-    try {
-      const data = await login(email, password);
-      setToken(data.access_token);
-      nav("/dashboard");
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail ?? "Erreur de connexion");
-    } finally {
-      setLoading(false);
+
+    const response = await fetch(
+      "http://127.0.0.1:8000/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email,
+          password: password,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Login failed");
     }
-  };
+
+    const data = await response.json();
+
+    localStorage.setItem("access_token", data.access_token);
+
+    navigate("/dashboard");
+
+  } catch (err) {
+    setError("Email ou mot de passe incorrect.");
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center relative overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_70%_30%,rgba(59,130,246,0.35),transparent_45%)]" />
-      <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_70%,rgba(236,72,153,0.25),transparent_45%)]" />
+    <div className="relative min-h-screen w-full overflow-hidden text-white">
+      {/* BACKGROUND IMAGE */}
+      <img
+        src={bg}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover scale-100"
+      />
 
-      <div className="relative w-[1100px] max-w-[95vw] h-[620px] rounded-2xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-2xl shadow-2xl flex">
-        {/* Left */}
-        <div className="w-[48%] p-10 flex flex-col justify-center">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30" />
-            <div className="text-2xl font-semibold">FraudShield</div>
+      {/* GLASS OVERLAY */}
+      <div
+        className="absolute inset-0 backdrop-blur-[1px]"
+        style={{ background: "rgba(17,44,74,0.45)" }}
+      />
+
+      <div className="relative z-10 flex min-h-screen items-center pl-24">
+        <div className="w-full max-w-[560px]">
+          {/* LOGO */}
+          <div className="flex items-center gap-3 mb-10">
+            <img src={logo} alt="FraudShield" className="w-12 h-12" />
+            <span
+              className="font-extrabold tracking-tight"
+              style={{
+                fontSize: "32px",
+                color: "#B3EAFF",
+              }}
+            >
+              FraudShield
+            </span>
           </div>
 
-          <div className="mt-8 text-3xl font-semibold leading-tight">
-            Connexion sécurisée <br /> à la plateforme
-          </div>
-          <div className="mt-3 text-sm text-white/70">
-            Accédez au tableau de bord, alertes et transactions en temps réel.
+          {/* TITLE */}
+          <h2
+            className="font-semibold leading-tight"
+            style={{
+              fontSize: "25px",
+              lineHeight: "1.12",
+            }}
+          >
+            Plateforme intelligente de
+            <br />
+            détection de fraude bancaire
+          </h2>
+
+          <div className="mt-6 flex items-center gap-5 text-[16px] text-white/70">
+            <span>IA</span>
+            <span>•</span>
+            <span>Temps réel</span>
+            <span>•</span>
+            <span>Sécurité</span>
           </div>
 
-          <form onSubmit={onSubmit} className="mt-10 space-y-5">
-            <div>
-              <label className="text-sm text-white/80">Email</label>
+          {/* LOGIN CARD */}
+          <div
+            className="mt-10 w-[520px] rounded-2xl p-8 border border-white/10 backdrop-blur-xl shadow-2xl"
+            style={{
+              background: "rgba(21,47,82,0.10)",
+            }}
+          >
+            {/* EMAIL */}
+            <label className="text-[18px] font-semibold text-white/90"> Email </label>
+            <div className="relative mt-3 mb-8">
               <input
-                className="mt-2 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-blue-400/60"
+                type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="ex: analyste@fraudshield.com"
+                className="w-full rounded-xl px-5 py-4 pr-12 text-white placeholder-white/40 outline-none border border-white/10"
+                style={{
+                  background: "rgba(28,75,121,0.1)",
+                }}
+                placeholder="Enter email"
               />
             </div>
 
-            <div>
-              <label className="text-sm text-white/80">Mot de passe</label>
+            {/* PASSWORD */}
+            <label className="text-[18px] font-semibold text-white/90">
+              Mot de passe
+            </label>
+            <div className="relative mt-3 mb-6">
               <input
                 type="password"
-                className="mt-2 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-blue-400/60"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                className="w-full rounded-xl px-5 py-4 pr-12 text-white placeholder-white/40 outline-none border border-white/10"
+                style={{
+                  background: "rgba(28,75,121,0.15)",
+                }}
+                placeholder="••••••••••••"
               />
             </div>
 
-            {err && (
-              <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-xl p-3">
-                {err}
+            {error && (
+              <div className="mb-4 text-red-300 text-sm">
+                {error}
               </div>
             )}
 
+            {/* BUTTON */}
             <button
+              onClick={handleLogin}
               disabled={loading}
-              className="w-full rounded-xl bg-blue-600/70 hover:bg-blue-600 transition px-4 py-3 font-semibold disabled:opacity-60"
+              className="w-full py-4 rounded-xl font-semibold text-[18px] transition disabled:opacity-60"
+              style={{
+                background: "rgba(46,125,201,0.55)",
+                border: "1px solid rgba(255,255,255,0.10)",
+              }}
             >
-              {loading ? "Connexion..." : "Se connecter"}
+              {loading ? "Connexion..." : "🔒 Connexion securisée"}
             </button>
-          </form>
-        </div>
-
-        {/* Right visual */}
-        <div className="w-[52%] relative">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(2,132,199,0.18),rgba(15,23,42,0.0))]" />
-          <div className="absolute right-10 top-1/2 -translate-y-1/2 w-[360px] h-[360px] rounded-full border border-white/10 bg-white/5" />
+          </div>
         </div>
       </div>
     </div>
