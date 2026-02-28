@@ -54,66 +54,73 @@ export function AppShell({
 
       <div className="relative z-10 flex h-screen w-full">
         {/* SIDEBAR */}
-        <aside className="w-[300px] shrink-0 border-r border-white/10 bg-white/5 backdrop-blur-xl relative">
-          <div className="px-6 py-6 flex items-center gap-3">
-            <img src={logo} className="h-9 w-9" />
-            <div className="font-extrabold text-[22px]" style={{ color: "#B3EAFF" }}>
+        <aside className="w-[300px] shrink-0 border-r border-white/10 bg-white/5 backdrop-blur-xl flex flex-col">
+
+          {/* TOP */}
+          <div className="px-5 py-5 flex items-center gap-2">
+            <img src={logo} className="h-8 w-8" />
+            <div className="font-extrabold text-[20px]" style={{ color: "#B3EAFF" }}>
               FraudShield
             </div>
           </div>
 
-          <nav className="px-4 space-y-3">
-            <SideLink to="/dashboard" icon={<LayoutDashboard size={18} />} label="Tableau de bord" />
-            <SideLink to="/alerts" icon={<Bell size={18} />} label="Alertes" />
-            <SideLink to="/transactions" icon={<CreditCard size={18} />} label="Transactions" />
-            <SideLink to="/users" icon={<Users size={18} />} label="Utilisateurs" />
+          {/* NAV */}
+          <nav className="px-3 space-y-2">
+            <SideLink to="/dashboard" icon={<LayoutDashboard size={16} />} label="Tableau de bord" />
+            <SideLink to="/alerts" icon={<Bell size={16} />} label="Alertes" />
+            <SideLink to="/transactions" icon={<CreditCard size={16} />} label="Transactions" />
+            <SideLink to="/users" icon={<Users size={16} />} label="Utilisateurs" />
           </nav>
 
-          <div className="mx-4 my-6 border-t border-white/10" />
+          <div className="mx-4 my-12 border-t border-white/10" />
 
-          <div className="px-4">
-            <div className="text-xs tracking-widest text-white/50 mb-3">ALERTES CRITIQUES</div>
+          {/* ACTIONS */}
+          <div className="px-3">
+            <div className="text-[11px] tracking-widest text-white/50 mb-2">
+              ALERTES CRITIQUES
+            </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4">
-              <div className="text-white/70 mb-3">Actions rapides</div>
+            <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-xl p-3">
+              <div className="text-white/70 mb-2 text-sm">Actions rapides</div>
 
               <button
                 onClick={onSimulate}
-                className="w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition"
+                className="w-full flex items-center gap-2 rounded-lg px-3 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
               >
-                <PlayCircle size={18} />
+                <PlayCircle size={16} />
                 Simuler un flux
               </button>
 
               <button
                 onClick={onExport}
-                className="mt-3 w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition"
+                className="mt-2 w-full flex items-center gap-2 rounded-lg px-3 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
               >
-                <FileDown size={18} />
+                <FileDown size={16} />
                 Exporter rapport
               </button>
 
               <button
                 onClick={onOpenCritical}
-                className="mt-3 w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-red-500/15 border border-red-300/20 hover:bg-red-500/20 transition"
+                className="mt-2 w-full flex items-center gap-2 rounded-lg px-3 py-2 bg-red-500/15 border border-red-300/20 hover:bg-red-500/20 transition text-sm"
               >
-                <Flame size={18} />
+                <Flame size={16} />
                 Ouvrir alertes critiques
               </button>
             </div>
           </div>
 
-          <div className="absolute bottom-0 left-0 w-[300px] px-4 pb-6">
+          {/* FOOTER */}
+          <div className="mt-auto px-4 pb-5">
+            <div className="mb-3 border-t border-white/10" />
             <button
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition"
+              className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
             >
-              <LogOut size={18} />
+              <LogOut size={16} />
               Déconnexion
             </button>
           </div>
         </aside>
-
         {/* MAIN */}
         <div className="flex-1 min-w-0 flex flex-col h-screen">
           {/* TOP BAR (comme Figma) */}

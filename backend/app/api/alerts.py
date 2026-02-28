@@ -6,6 +6,9 @@ from datetime import timedelta
 
 from app.core.deps import get_db, get_current_user
 from app import models
+from fastapi.responses import StreamingResponse
+import csv
+import io
 
 router = APIRouter(prefix="/alerts", tags=["Alertes"])
 
@@ -104,3 +107,58 @@ def list_alerts(
         })
 
     return {"items": items, "page": page, "page_size": page_size, "total": total}
+
+
+@router.get("/export.csv")
+def export_alerts_csv(
+    criticite: str | None = None,
+    statut: str | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    q = (
+        db.query(models.Alerte)
+        .join(models.Transaction, models.Alerte.idtransac == models.Transaction.idtransac)
+        .join(models.Client, models.Transaction.idclient == models.Client.idclient)
+        .join(models.Commercant, models.Transaction.idcommercant == models.Commercant.idcommercant)
+        .order_by(desc(models.Alerte.date_creation))
+    )
+    if criticite:
+        q = q.filter(models.Alerte.criticite == criticite)
+    if statut:
+        q = q.filter(models.Alerte.statut == statut)
+
+    rows = q.limit(2000).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["idAlerte", "date_creation", "criticite", "statut", "score_final", "idTransac", "client", "commercant", "montant", "devise"])
+
+    for a in rows:
+        t = a.transaction
+        c = t.client
+        m = t.commercant
+        score_final = ""
+        if a.prediction_principale:
+            score_final = float(a.prediction_principale.score_risque)
+
+        writer.writerow([
+            str(a.idalerte),
+            a.date_creation.isoformat(),
+            a.criticite,
+            a.statut,
+            score_final,
+            str(t.idtransac),
+            f"{c.nom} {c.prenom or ''}".strip(),
+            m.nom,
+            float(t.montant),
+            t.devise,
+        ])
+
+    output.seek(0)
+    filename = "fraudshield_alerts_export.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

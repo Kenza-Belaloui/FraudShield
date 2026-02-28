@@ -11,13 +11,29 @@ export type DashboardSummary = {
     date_creation: string;
     criticite: string;
     statut: string;
-    raison: string | null;
+    raison: string;
     score_final: number;
-    idTransac: string | null;
+    idTransac: string;
+  }>;
+};
+
+export type DashboardTimeseries = {
+  days: number;
+  series: Array<{
+    date: string;
+    transactions: number;
+    alertes: number;
+    fraude_eleve: number;
+    taux_fraude: number;
   }>;
 };
 
 export async function getDashboardSummary() {
   const res = await api.get<DashboardSummary>("/dashboard/summary");
+  return res.data;
+}
+
+export async function getDashboardTimeseries(days: number = 7) {
+  const res = await api.get<DashboardTimeseries>("/dashboard/timeseries", { params: { days } });
   return res.data;
 }

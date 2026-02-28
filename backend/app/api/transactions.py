@@ -190,3 +190,71 @@ def create_transaction(
         "features": features,
         "message": "Transaction analysée",
     }
+
+import random
+from uuid import UUID
+from datetime import datetime, timezone, timedelta
+
+@router.post("/simulate")
+def simulate_transactions(
+    count: int = 30,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    count = max(1, min(count, 200))
+
+    # Reuse demo entities if exist, else create minimal ones
+    client = db.query(models.Client).filter(models.Client.reference_externe == "CLT-0001").first()
+    if not client:
+        client = models.Client(nom="Dupont", prenom="Amine", reference_externe="CLT-0001", segment="STANDARD")
+        db.add(client)
+        db.commit()
+        db.refresh(client)
+
+    carte = db.query(models.Carte).filter(models.Carte.pan_masque == "4970********7890").first()
+    if not carte:
+        carte = models.Carte(
+            pan_masque="4970********7890",
+            emetteur="VISA",
+            mois_expiration=8,
+            annee_expiration=2029,
+            idclient=client.idclient
+        )
+        db.add(carte)
+        db.commit()
+        db.refresh(carte)
+
+    commercant = db.query(models.Commercant).filter(models.Commercant.nom == "TechStore Paris").first()
+    if not commercant:
+        commercant = models.Commercant(nom="TechStore Paris", categorie="Electronics", pays="France", ville="Paris")
+        db.add(commercant)
+        db.commit()
+        db.refresh(commercant)
+
+    created = 0
+    elev = 0
+    now = datetime.now(timezone.utc)
+
+    for i in range(count):
+        montant = round(random.uniform(5, 2500), 2)
+        canal = random.choice(["POS", "E_COMMERCE", "DAB"])
+        statut = random.choice(["ACCEPTEE", "ACCEPTEE", "ACCEPTEE", "EN_ATTENTE", "REFUSEE"])
+        dt = now - timedelta(minutes=random.randint(0, 60 * 48))
+
+        payload = TransactionCreate(
+            idClient=client.idclient,
+            idCarte=carte.idcarte,
+            idCommercant=commercant.idcommercant,
+            date_heure=dt,
+            montant=montant,
+            devise="EUR",
+            canal=canal,
+            statut=statut
+        )
+
+        res = create_transaction(payload, db=db, current_user=current_user)
+        created += 1
+        if res.get("criticite") == "ELEVE":
+            elev += 1
+
+    return {"created": created, "elev_count": elev, "message": "Simulation terminée"}
