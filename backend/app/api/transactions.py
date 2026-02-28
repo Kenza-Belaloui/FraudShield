@@ -35,21 +35,39 @@ class TransactionCreate(BaseModel):
 # Routes
 # ==========
 
+from sqlalchemy import or_
+
 @router.get("")
 def list_transactions(
     page: int = 1,
     page_size: int = 20,
+    q: str | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
 
-    q = db.query(models.Transaction).order_by(desc(models.Transaction.date_heure))
-    total = q.count()
-    rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    query = db.query(models.Transaction)
 
-    items = []
+    if q:
+        s = q.strip()
+        query = (
+            query.join(models.Client, models.Transaction.idclient == models.Client.idclient)
+                 .join(models.Commercant, models.Transaction.idcommercant == models.Commercant.idcommercant)
+                 .filter(
+                    or_(
+                        models.Client.nom.ilike(f"%{s}%"),
+                        models.Client.prenom.ilike(f"%{s}%"),
+                        models.Commercant.nom.ilike(f"%{s}%"),
+                        models.Transaction.idtransac.cast(models.String).ilike(f"%{s}%"),
+                    )
+                 )
+        )
+
+    qdb = query.order_by(desc(models.Transaction.date_heure))
+    total = qdb.count()
+    rows = qdb.offset((page - 1) * page_size).limit(page_size).all()
     for t in rows:
         alerte = getattr(t, "alerte", None)
 
@@ -258,3 +276,39 @@ def simulate_transactions(
             elev += 1
 
     return {"created": created, "elev_count": elev, "message": "Simulation terminée"}
+
+from fastapi import HTTPException
+
+@router.get("/{idtransac}")
+def get_transaction(
+    idtransac: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    t = db.query(models.Transaction).filter(models.Transaction.idtransac == idtransac).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Transaction introuvable")
+
+    alerte = getattr(t, "alerte", None)
+    score_final = None
+    if alerte and getattr(alerte, "prediction_principale", None):
+        score_final = float(alerte.prediction_principale.score_risque)
+
+    return {
+        "idTransac": str(t.idtransac),
+        "date_heure": t.date_heure.isoformat(),
+        "montant": float(t.montant),
+        "devise": t.devise,
+        "canal": t.canal,
+        "statut": t.statut,
+        "client": {"nom": t.client.nom, "prenom": t.client.prenom} if t.client else None,
+        "commercant": {"nom": t.commercant.nom, "categorie": t.commercant.categorie, "pays": t.commercant.pays, "ville": t.commercant.ville} if t.commercant else None,
+        "alerte": {
+            "criticite": alerte.criticite if alerte else None,
+            "statut": alerte.statut if alerte else None,
+            "score_final": score_final,
+            "raison": alerte.raison if alerte else None,
+        } if alerte else None,
+        "features": getattr(t, "features", None),
+        "reason_codes": getattr(t, "reason_codes", None),
+    }
