@@ -20,10 +20,16 @@ export function AppShell({
   children,
   user,
   onLogout,
+  onSimulate,
+  onExport,
+  onOpenCritical,
 }: {
   children: ReactNode;
   user?: { nom?: string; prenom?: string };
   onLogout: () => void;
+  onSimulate?: () => void;
+  onExport?: () => void;
+  onOpenCritical?: () => void;
 }) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
@@ -32,7 +38,7 @@ export function AppShell({
     const nom = user?.nom?.trim() || "";
     const prenom = user?.prenom?.trim() || "";
     const v = `${nom} ${prenom}`.trim();
-    return v || "Admin";
+    return v || "Nom prenom";
   }, [user]);
 
   function submitSearch() {
@@ -43,12 +49,11 @@ export function AppShell({
 
   return (
     <div className="relative h-screen w-full overflow-hidden text-white">
-      {/* background */}
       <img src={bg} alt="" className="absolute inset-0 h-full w-full object-cover" />
       <div className="absolute inset-0" style={{ background: "rgba(5,18,40,0.55)" }} />
 
       <div className="relative z-10 flex h-screen w-full">
-        {/* sidebar */}
+        {/* SIDEBAR */}
         <aside className="w-[300px] shrink-0 border-r border-white/10 bg-white/5 backdrop-blur-xl relative">
           <div className="px-6 py-6 flex items-center gap-3">
             <img src={logo} className="h-9 w-9" />
@@ -72,17 +77,26 @@ export function AppShell({
             <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4">
               <div className="text-white/70 mb-3">Actions rapides</div>
 
-              <button className="w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition">
+              <button
+                onClick={onSimulate}
+                className="w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition"
+              >
                 <PlayCircle size={18} />
                 Simuler un flux
               </button>
 
-              <button className="mt-3 w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition">
+              <button
+                onClick={onExport}
+                className="mt-3 w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition"
+              >
                 <FileDown size={18} />
                 Exporter rapport
               </button>
 
-              <button className="mt-3 w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-red-500/15 border border-red-300/20 hover:bg-red-500/20 transition">
+              <button
+                onClick={onOpenCritical}
+                className="mt-3 w-full flex items-center gap-2 rounded-xl px-3 py-3 bg-red-500/15 border border-red-300/20 hover:bg-red-500/20 transition"
+              >
                 <Flame size={18} />
                 Ouvrir alertes critiques
               </button>
@@ -100,9 +114,9 @@ export function AppShell({
           </div>
         </aside>
 
-        {/* main */}
+        {/* MAIN */}
         <div className="flex-1 min-w-0 flex flex-col h-screen">
-          {/* top bar */}
+          {/* TOP BAR (comme Figma) */}
           <header className="h-[74px] px-8 flex items-center gap-4">
             <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 border border-emerald-400/20 px-3 py-1 text-emerald-200 text-sm">
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -116,7 +130,7 @@ export function AppShell({
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submitSearch()}
-                  placeholder="Transaction ID, Client, Merchant..."
+                  placeholder="Transaction ID , Client, Merchant..."
                   className="w-full rounded-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40"
                 />
               </div>
@@ -132,7 +146,7 @@ export function AppShell({
             </div>
           </header>
 
-          {/* scroll zone (IMPORTANT) */}
+          {/* CONTENT */}
           <main className="flex-1 min-h-0 overflow-y-auto px-8 pb-10">
             {children}
           </main>

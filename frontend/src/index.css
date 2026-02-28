@@ -4,13 +4,44 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Qualité visuelle */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
 html, body, #root {
   height: 100%;
 }
 
-/* Anti-zoom/crop sur les écrans larges */
+/* IMPORTANT: ne pas bloquer le scroll global */
 body {
   margin: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+}
+
+/* Helpers FraudShield */
+.fs-glass {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(16px);
+}
+
+.fs-input {
+  background: rgba(28, 75, 121, 0.15) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+}
+
+.fs-input::placeholder {
+  color: rgba(255,255,255,0.45);
+}
+
+/* Autofill */
+.fs-input:-webkit-autofill,
+.fs-input:-webkit-autofill:hover,
+.fs-input:-webkit-autofill:focus,
+.fs-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px rgba(28, 75, 121, 0.15) inset !important;
+  box-shadow: 0 0 0 1000px rgba(28, 75, 121, 0.15) inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
 }

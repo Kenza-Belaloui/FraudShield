@@ -1,7 +1,7 @@
 ﻿import React, { createContext, useContext, useEffect, useState } from "react";
 import { login as apiLogin, me as apiMe } from "../api/auth";
 
-type User = { nom?: string; prenom?: string; email?: string };
+type User = { nom?: string; prenom?: string; email?: string; role?: string };
 
 type AuthCtx = {
   token: string | null;
@@ -16,6 +16,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem("access_token"));
   const [user, setUser] = useState<User | null>(null);
 
+  // charge /auth/me dès qu'on a un token
   useEffect(() => {
     async function loadMe() {
       if (!token) {
@@ -26,8 +27,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const u = await apiMe();
         setUser(u);
       } catch {
-        // si pas /auth/me, fallback
-        setUser({ nom: "Admin", prenom: "" });
+        // si /auth/me indisponible ou token invalide
+        localStorage.removeItem("access_token");
+        setToken(null);
+        setUser(null);
       }
     }
     loadMe();
@@ -43,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const u = await apiMe();
       setUser(u);
     } catch {
-      setUser({ nom: "Admin", prenom: "" });
+      setUser({ nom: "Admin", prenom: "", email });
     }
   }
 
