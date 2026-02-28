@@ -8,7 +8,7 @@ export function TransactionsPage() {
   const q = sp.get("q") || "";
 
   return (
-    <AppLayout user={user || undefined} onLogout={logout}>
+    <AppShell user={user || undefined} onLogout={logout}>
       <div className="pt-6">
         <h1 className="text-[22px] font-bold mb-2">Transactions</h1>
         <div className="text-white/60 mb-4">
@@ -16,9 +16,9 @@ export function TransactionsPage() {
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white/70">
-          Page Transactions prête. Ensuite on branche /transactions + affichage table + détails.
+          Étape 1 OK ✅. Étape 2 : on branche table + détails + pagination + responsive.
         </div>
       </div>
-    </AppLayout>
+    </AppShell>
   );
 }

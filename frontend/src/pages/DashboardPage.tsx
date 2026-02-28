@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "../layout/AppShell";
 import { useAuth } from "../auth/AuthContext";
-import { getDashboardStats } from "../api/dashboard";
+import { getDashboardSummary, type DashboardSummary } from "../api/dashboard";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export function DashboardPage() {
   const { user, logout } = useAuth();
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
+        setError(null);
         const res = await getDashboardSummary();
         setData(res);
+      } catch {
+        setError("Impossible de charger le dashboard.");
       } finally {
         setLoading(false);
       }
@@ -23,11 +27,8 @@ export function DashboardPage() {
 
   const chartData = useMemo(() => {
     const d = data?.criticite_distribution_7j || {};
-    // ordre pro
     const order = ["FAIBLE", "MOYEN", "ELEVE"];
-    return order
-      .filter((k) => k in d)
-      .map((k) => ({ criticite: k, count: d[k] }));
+    return order.map((k) => ({ criticite: k, count: d[k] || 0 }));
   }, [data]);
 
   return (
@@ -35,13 +36,17 @@ export function DashboardPage() {
       <div className="pt-6">
         <h1 className="text-center text-[26px] font-bold mb-6">Tableau de bord</h1>
 
-        {/* GRID */}
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-300/20 bg-red-500/10 p-4 text-red-100">
+            {error}
+          </div>
+        )}
+
         <div className="grid grid-cols-12 gap-6">
-          {/* LEFT - CHART */}
-          <section className="col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+          <section className="col-span-12 lg:col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="text-lg font-semibold mb-4">Volume d’alertes par criticité (7 jours)</div>
 
-            <div className="h-[360px] rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="h-[320px] lg:h-[360px] rounded-2xl border border-white/10 bg-white/5 p-4">
               {loading ? (
                 <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
               ) : (
@@ -64,26 +69,28 @@ export function DashboardPage() {
             </div>
           </section>
 
-          {/* RIGHT - STATS */}
-          <section className="col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+          <section className="col-span-12 lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="text-lg font-semibold mb-4">Statistiques</div>
 
             <StatCard title="Transactions analysées (24h)" value={data?.transactions_24h ?? 0} variant="blue" />
             <StatCard title="Alertes actives" value={data?.alertes_actives ?? 0} variant="red" />
-            <StatCard title="Taux de fraude (7j)" value={`${(data?.taux_fraude_7j ?? 0).toFixed(2)} %`} variant="green" />
+            <StatCard
+              title="Taux de fraude (7j)"
+              value={`${(data?.taux_fraude_7j ?? 0).toFixed(2)} %`}
+              variant="green"
+            />
             <StatCard
               title="Temps moyen d’analyse"
-              value={`${Math.round((data?.temps_moyen_analyse_ms ?? 0) / 1000)}s`}
+              value={`${Math.round((data?.temps_moyen_analyse_ms ?? 0))} ms`}
               variant="cyan"
             />
           </section>
 
-          {/* BOTTOM - RECENT ALERTS */}
           <section className="col-span-12 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="text-lg font-semibold mb-4">Alertes récentes</div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[820px]">
                 <thead className="text-white/70">
                   <tr className="border-b border-white/10">
                     <th className="text-left py-3">ID alerte</th>
@@ -103,8 +110,8 @@ export function DashboardPage() {
                         <Badge criticite={a.criticite} />
                       </td>
                       <td className="py-3 text-white/85">{a.statut}</td>
-                      <td className="py-3 text-white/85">{a.score_final.toFixed(4)}</td>
-                      <td className="py-3 text-white/85">{a.idTransac.slice(0, 10)}…</td>
+                      <td className="py-3 text-white/85">{Number(a.score_final || 0).toFixed(4)}</td>
+                      <td className="py-3 text-white/85">{(a.idTransac || "").slice(0, 10)}…</td>
                     </tr>
                   ))}
 

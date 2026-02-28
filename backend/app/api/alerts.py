@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_, and_
 from datetime import date
+from datetime import timedelta
 
 from app.core.deps import get_db, get_current_user
 from app import models
@@ -53,8 +54,7 @@ def list_alerts(
         q = q.filter(models.Alerte.date_creation >= date_debut)
 
     if date_fin:
-        # inclure la journée entière
-        q = q.filter(models.Alerte.date_creation < date_fin)
+        q = q.filter(models.Alerte.date_creation < (date_fin + timedelta(days=1)))
 
     if montant_min is not None:
         q = q.filter(models.Transaction.montant >= montant_min)

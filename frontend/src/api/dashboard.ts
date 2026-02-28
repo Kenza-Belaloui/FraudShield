@@ -1,6 +1,6 @@
-import axios from "axios";
+import { api } from "./client";
 
-export type DashboardStats = {
+export type DashboardSummary = {
   transactions_24h: number;
   alertes_actives: number;
   taux_fraude_7j: number;
@@ -11,17 +11,13 @@ export type DashboardStats = {
     date_creation: string;
     criticite: string;
     statut: string;
-    raison: string;
+    raison: string | null;
     score_final: number;
-    idTransac: string;
+    idTransac: string | null;
   }>;
 };
 
-const API_BASE = "http://127.0.0.1:8000";
-
-export async function getDashboardStats(token?: string) {
-  const res = await axios.get<DashboardStats>(`${API_BASE}/alerts/dashboard`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
+export async function getDashboardSummary() {
+  const res = await api.get<DashboardSummary>("/dashboard/summary");
   return res.data;
 }

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
 import bg from "../assets/bg-login.png";
 import logo from "../assets/logo-shield.png";
+import { login as apiLogin } from "../api/auth";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -19,31 +19,11 @@ async function handleLogin() {
     setError(null);
     setLoading(true);
 
-    const response = await fetch(
-      "http://127.0.0.1:8000/auth/login",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email,
-          password: password,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Login failed");
-    }
-
-    const data = await response.json();
-
-    localStorage.setItem("access_token", data.access_token);
+    const res = await apiLogin({ email, password });
+    localStorage.setItem("access_token", res.access_token);
 
     navigate("/dashboard");
-
-  } catch (err) {
+  } catch {
     setError("Email ou mot de passe incorrect.");
   } finally {
     setLoading(false);
