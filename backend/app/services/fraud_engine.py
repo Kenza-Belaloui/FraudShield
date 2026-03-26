@@ -26,35 +26,57 @@ def _to_criticite(score_final: float) -> str:
     return "ELEVE"
 
 
-def _prepare_feature_row(ml_features: Dict[str, float], feature_names: list[str]) -> pd.DataFrame:
-    row = dict(ml_features)
+def _prepare_supervised_row(ml_features: Dict[str, float]) -> pd.DataFrame:
+    row = {
+        "Amount": float(ml_features.get("Amount", 0.0)),
+        "client_segment": ml_features.get("client_segment", "STANDARD"),
+        "client_pays": ml_features.get("client_pays", "France"),
+        "client_revenu_mensuel": float(ml_features.get("client_revenu_mensuel", 0.0)),
+        "client_plafond_journalier": float(ml_features.get("client_plafond_journalier", 0.0)),
+        "nb_tx_24h": int(ml_features.get("nb_tx_24h", 0)),
+        "avg_amount_7d": float(ml_features.get("avg_amount_7d", 0.0)),
+        "heure_nuit": int(ml_features.get("heure_nuit", 0)),
+        "is_pays_inhabituel": int(ml_features.get("is_pays_inhabituel", 0)),
+        "depasse_plafond": int(ml_features.get("depasse_plafond", 0)),
+        "ratio_revenu": float(ml_features.get("ratio_revenu", 0.0)),
+        "balance_error_orig": float(ml_features.get("balance_error_orig", 0.0)),
+        "balance_error_dest": float(ml_features.get("balance_error_dest", 0.0)),
+        "is_transfer": int(ml_features.get("is_transfer", 0)),
+        "is_cash_out": int(ml_features.get("is_cash_out", 0)),
+        "is_payment": int(ml_features.get("is_payment", 0)),
+        "is_cash_in": int(ml_features.get("is_cash_in", 0)),
+        "is_debit": int(ml_features.get("is_debit", 0)),
+        "isFlaggedFraud": int(ml_features.get("isFlaggedFraud", 0)),
+    }
+    return pd.DataFrame([row])
 
-    # Encodage segment
-    segment = str(row.get("client_segment", "STANDARD")).upper()
-    row["client_segment"] = 1 if segment == "PREMIUM" else 0
 
-    # One-hot simple pour client_pays
-    client_pays = str(row.get("client_pays", "France")).strip()
-    row[f"client_pays_{client_pays}"] = 1
-    row.pop("client_pays", None)
-
-    # S'assurer que toutes les colonnes attendues existent
-    for col in feature_names:
-        if col not in row:
-            row[col] = 0
-
-    df = pd.DataFrame([row])
-
-    # Ne garder que les colonnes attendues, dans le bon ordre
-    df = df[feature_names]
-    return df
+def _prepare_iforest_row(ml_features: Dict[str, float]) -> pd.DataFrame:
+    row = {
+        "Amount": float(ml_features.get("Amount", 0.0)),
+        "nb_tx_24h": int(ml_features.get("nb_tx_24h", 0)),
+        "avg_amount_7d": float(ml_features.get("avg_amount_7d", 0.0)),
+        "heure_nuit": int(ml_features.get("heure_nuit", 0)),
+        "is_pays_inhabituel": int(ml_features.get("is_pays_inhabituel", 0)),
+        "depasse_plafond": int(ml_features.get("depasse_plafond", 0)),
+        "ratio_revenu": float(ml_features.get("ratio_revenu", 0.0)),
+        "balance_error_orig": float(ml_features.get("balance_error_orig", 0.0)),
+        "balance_error_dest": float(ml_features.get("balance_error_dest", 0.0)),
+        "is_transfer": int(ml_features.get("is_transfer", 0)),
+        "is_cash_out": int(ml_features.get("is_cash_out", 0)),
+        "is_payment": int(ml_features.get("is_payment", 0)),
+        "is_cash_in": int(ml_features.get("is_cash_in", 0)),
+        "is_debit": int(ml_features.get("is_debit", 0)),
+        "isFlaggedFraud": int(ml_features.get("isFlaggedFraud", 0)),
+    }
+    return pd.DataFrame([row])
 
 
 def evaluate_transaction(
     montant: float,
     canal: str,
     pays: Optional[str],
-    ml_features: Optional[Dict[str, float]] = None,
+    ml_features: Optional[Dict[str, float]] = None
 ) -> FraudDecision:
     if not ml_features:
         res = score_transaction_mock(montant=montant, canal=canal, pays=pays)
@@ -67,30 +89,17 @@ def evaluate_transaction(
             modele_principal="XGBoost",
         )
 
-    iso, xgb, scaler_iso, scaler_xgb, feature_names = load_models()
+    iso, xgb_pipeline, scaler_iso, _, _ = load_models()
 
-    df = _prepare_feature_row(ml_features, feature_names)
+    xgb_df = _prepare_supervised_row(ml_features)
+    if_df = _prepare_iforest_row(ml_features)
 
-    # Prépa XGBoost
-    df_xgb = df.copy()
-    if "Amount" in df_xgb.columns:
-        df_xgb["Amount_scaled"] = scaler_xgb.transform(df_xgb[["Amount"]])
-        if "Amount" in df_xgb.columns:
-            df_xgb = df_xgb.drop(columns=["Amount"])
+    score_xgb = float(xgb_pipeline.predict_proba(xgb_df)[:, 1][0])
 
-    # Prépa Isolation Forest
-    df_iso = df.copy()
-    if "Amount" in df_iso.columns:
-        df_iso["Amount_scaled"] = scaler_iso.transform(df_iso[["Amount"]])
-        if "Amount" in df_iso.columns:
-            df_iso = df_iso.drop(columns=["Amount"])
-
-    score_xgb = float(xgb.predict_proba(df_xgb)[:, 1][0])
-
-    pred_if = int(iso.predict(df_iso)[0])  # -1 anomalie, 1 normal
+    if_scaled = scaler_iso.transform(if_df)
+    pred_if = int(iso.predict(if_scaled)[0])  # -1 anomalie, 1 normal
     score_iforest = 1.0 if pred_if == -1 else 0.0
 
-    # Score final piloté par le modèle supervisé
     score_final = score_xgb
     criticite = _to_criticite(score_final)
 

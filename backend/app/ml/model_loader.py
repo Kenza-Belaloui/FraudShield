@@ -5,7 +5,7 @@ import joblib
 
 @lru_cache(maxsize=1)
 def load_models():
-    base_dir = Path(__file__).resolve().parents[3]  # .../FraudShield
+    base_dir = Path(__file__).resolve().parents[3]
     models_dir = base_dir / "ml" / "models"
 
     iso = joblib.load(models_dir / "isolation_forest.joblib")

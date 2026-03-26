@@ -17,19 +17,6 @@ def compute_behavior_features(
     date_heure: datetime,
     commercant_pays: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Feature store comportemental aligné avec models.py
-
-    Features calculées :
-    - nb_tx_24h
-    - avg_amount_7d
-    - heure_nuit
-    - is_pays_inhabituel
-    - depasse_plafond
-    - ratio_revenu
-    - client metadata utile à l'inférence
-    """
-
     client = (
         db.query(models.Client)
         .filter(models.Client.idclient == client_id)
@@ -39,7 +26,7 @@ def compute_behavior_features(
     client_pays = getattr(client, "pays_residence", None) if client else None
     plafond = float(getattr(client, "plafond_carte_journalier", 0) or 0) if client else 0.0
     revenu = float(getattr(client, "revenu_mensuel_estime", 0) or 0) if client else 0.0
-    segment = getattr(client, "segment", None) if client else None
+    segment = getattr(client, "segment", None) if client else "STANDARD"
 
     start_24h = date_heure - timedelta(hours=24)
     start_7d = date_heure - timedelta(days=7)
@@ -67,10 +54,30 @@ def compute_behavior_features(
         is_pays_inhabituel = 1
 
     depasse_plafond = 1 if (plafond > 0 and montant > plafond) else 0
+    ratio_revenu = float(montant) / float(revenu) if revenu > 0 else 0.0
 
-    ratio_revenu = 0.0
-    if revenu > 0:
-        ratio_revenu = float(montant) / float(revenu)
+    # mapping simple du canal vers pseudo-type paysim enrichi
+    canal = ""
+    tx = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.idclient == client_id)
+        .filter(models.Transaction.idcommercant == commercant_id)
+        .order_by(models.Transaction.date_heure.desc())
+        .first()
+    )
+    if tx:
+        canal = (tx.canal or "").upper()
+
+    is_transfer = 1 if canal == "E_COMMERCE" else 0
+    is_cash_out = 1 if canal == "DAB" else 0
+    is_payment = 1 if canal == "POS" else 0
+    is_cash_in = 0
+    is_debit = 1 if canal in {"POS", "E_COMMERCE", "DAB"} else 0
+
+    # dans l'app réelle on n'a pas old/new balance -> défaut neutre
+    balance_error_orig = 0.0
+    balance_error_dest = 0.0
+    isFlaggedFraud = 0
 
     return {
         "Amount": float(montant),
@@ -84,4 +91,12 @@ def compute_behavior_features(
         "is_pays_inhabituel": int(is_pays_inhabituel),
         "depasse_plafond": int(depasse_plafond),
         "ratio_revenu": float(ratio_revenu),
+        "balance_error_orig": float(balance_error_orig),
+        "balance_error_dest": float(balance_error_dest),
+        "is_transfer": int(is_transfer),
+        "is_cash_out": int(is_cash_out),
+        "is_payment": int(is_payment),
+        "is_cash_in": int(is_cash_in),
+        "is_debit": int(is_debit),
+        "isFlaggedFraud": int(isFlaggedFraud),
     }
