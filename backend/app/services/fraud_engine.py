@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 import pandas as pd
 
+from app.core.settings import XGB_FRAUD_THRESHOLD, CRIT_LOW_MAX, CRIT_MED_MAX
 from app.ml.model_loader import load_models
 from app.services.scoring import score_transaction_mock
-from app.core.settings import XGB_FRAUD_THRESHOLD, CRIT_LOW_MAX, CRIT_MED_MAX
 
 
 @dataclass
@@ -26,14 +26,36 @@ def _to_criticite(score_final: float) -> str:
     return "ELEVE"
 
 
+def _prepare_feature_row(ml_features: Dict[str, float], feature_names: list[str]) -> pd.DataFrame:
+    row = dict(ml_features)
+
+    # Encodage segment
+    segment = str(row.get("client_segment", "STANDARD")).upper()
+    row["client_segment"] = 1 if segment == "PREMIUM" else 0
+
+    # One-hot simple pour client_pays
+    client_pays = str(row.get("client_pays", "France")).strip()
+    row[f"client_pays_{client_pays}"] = 1
+    row.pop("client_pays", None)
+
+    # S'assurer que toutes les colonnes attendues existent
+    for col in feature_names:
+        if col not in row:
+            row[col] = 0
+
+    df = pd.DataFrame([row])
+
+    # Ne garder que les colonnes attendues, dans le bon ordre
+    df = df[feature_names]
+    return df
+
+
 def evaluate_transaction(
     montant: float,
     canal: str,
     pays: Optional[str],
-    ml_features: Optional[Dict[str, float]] = None
+    ml_features: Optional[Dict[str, float]] = None,
 ) -> FraudDecision:
-
-    # Fallback si tu n'as pas encore de features (mode mock)
     if not ml_features:
         res = score_transaction_mock(montant=montant, canal=canal, pays=pays)
         return FraudDecision(
@@ -42,43 +64,40 @@ def evaluate_transaction(
             score_final=res.score_final,
             criticite=res.criticite,
             raison="Fallback mock (pas de ml_features)",
-            modele_principal="XGBoost"
+            modele_principal="XGBoost",
         )
 
-    iso, xgb, scaler_iso, scaler_xgb = load_models()
+    iso, xgb, scaler_iso, scaler_xgb, feature_names = load_models()
 
-    # Construire la ligne Kaggle-like
-    row = {"Time": float(ml_features.get("Time", 0.0))}
-    for i in range(1, 29):
-        row[f"V{i}"] = float(ml_features.get(f"V{i}", 0.0))
-    row["Amount"] = float(montant)
+    df = _prepare_feature_row(ml_features, feature_names)
 
-    df = pd.DataFrame([row])
-
-    # Prépa IF
-    df_iso = df.copy()
-    df_iso["Amount_scaled"] = scaler_iso.transform(df_iso[["Amount"]])
-    df_iso = df_iso.drop(columns=["Amount"])
-
-    # Prépa XGB
+    # Prépa XGBoost
     df_xgb = df.copy()
-    df_xgb["Amount_scaled"] = scaler_xgb.transform(df_xgb[["Amount"]])
-    df_xgb = df_xgb.drop(columns=["Amount"])
+    if "Amount" in df_xgb.columns:
+        df_xgb["Amount_scaled"] = scaler_xgb.transform(df_xgb[["Amount"]])
+        if "Amount" in df_xgb.columns:
+            df_xgb = df_xgb.drop(columns=["Amount"])
 
-    # Scores
+    # Prépa Isolation Forest
+    df_iso = df.copy()
+    if "Amount" in df_iso.columns:
+        df_iso["Amount_scaled"] = scaler_iso.transform(df_iso[["Amount"]])
+        if "Amount" in df_iso.columns:
+            df_iso = df_iso.drop(columns=["Amount"])
+
     score_xgb = float(xgb.predict_proba(df_xgb)[:, 1][0])
 
     pred_if = int(iso.predict(df_iso)[0])  # -1 anomalie, 1 normal
     score_iforest = 1.0 if pred_if == -1 else 0.0
 
-    # ✅ Mode A : score_final = score_xgb (plus clair pour prof)
+    # Score final piloté par le modèle supervisé
     score_final = score_xgb
     criticite = _to_criticite(score_final)
 
     raison = (
         f"Scoring réel (XGBoost+IF) | "
         f"score_xgb={score_xgb:.4f} | "
-        f"if_anomaly={int(score_iforest==1.0)} | "
+        f"if_anomaly={int(score_iforest == 1.0)} | "
         f"seuil_fraude={XGB_FRAUD_THRESHOLD:.6f} | "
         f"seuils_criticite={CRIT_LOW_MAX:.4f}/{CRIT_MED_MAX:.4f}"
     )
@@ -89,5 +108,5 @@ def evaluate_transaction(
         score_final=score_final,
         criticite=criticite,
         raison=raison,
-        modele_principal="XGBoost"
+        modele_principal="XGBoost",
     )

@@ -1,24 +1,21 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 from uuid import UUID
-from typing import Optional, Dict, Any, List
+import random
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 
-from app.core.deps import get_db, get_current_user
 from app import models
-from app.services.fraud_engine import evaluate_transaction
+from app.core.deps import get_current_user, get_db
 from app.services.feature_store import compute_behavior_features
+from app.services.fraud_engine import evaluate_transaction
 from app.services.reason_codes import build_reason_codes
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
-
-# ==========
-# Schemas
-# ==========
 
 class TransactionCreate(BaseModel):
     idClient: UUID
@@ -30,12 +27,6 @@ class TransactionCreate(BaseModel):
     canal: str
     statut: str
 
-
-# ==========
-# Routes
-# ==========
-
-from sqlalchemy import or_
 
 @router.get("")
 def list_transactions(
@@ -54,20 +45,23 @@ def list_transactions(
         s = q.strip()
         query = (
             query.join(models.Client, models.Transaction.idclient == models.Client.idclient)
-                 .join(models.Commercant, models.Transaction.idcommercant == models.Commercant.idcommercant)
-                 .filter(
-                    or_(
-                        models.Client.nom.ilike(f"%{s}%"),
-                        models.Client.prenom.ilike(f"%{s}%"),
-                        models.Commercant.nom.ilike(f"%{s}%"),
-                        models.Transaction.idtransac.cast(models.String).ilike(f"%{s}%"),
-                    )
-                 )
+            .join(models.Commercant, models.Transaction.idcommercant == models.Commercant.idcommercant)
+            .filter(
+                or_(
+                    models.Client.nom.ilike(f"%{s}%"),
+                    models.Client.prenom.ilike(f"%{s}%"),
+                    models.Commercant.nom.ilike(f"%{s}%"),
+                    models.Transaction.idtransac.cast(models.String).ilike(f"%{s}%"),
+                )
+            )
         )
 
     qdb = query.order_by(desc(models.Transaction.date_heure))
     total = qdb.count()
     rows = qdb.offset((page - 1) * page_size).limit(page_size).all()
+
+    items = []
+
     for t in rows:
         alerte = getattr(t, "alerte", None)
 
@@ -84,15 +78,16 @@ def list_transactions(
             "statut": t.statut,
             "client": {
                 "nom": t.client.nom,
-                "prenom": t.client.prenom
+                "prenom": t.client.prenom,
             } if getattr(t, "client", None) else None,
             "commercant": {
-                "nom": t.commercant.nom
+                "nom": t.commercant.nom,
             } if getattr(t, "commercant", None) else None,
             "alerte": {
+                "idAlerte": str(alerte.idalerte) if alerte else None,
                 "criticite": alerte.criticite if alerte else None,
                 "statut": alerte.statut if alerte else None,
-                "score_final": score_final
+                "score_final": score_final,
             },
             "features": getattr(t, "features", None),
             "reason_codes": getattr(t, "reason_codes", None),
@@ -107,13 +102,13 @@ def create_transaction(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # 0) récupérer pays marchand (utile pour features + scoring)
-    commercant = db.query(models.Commercant).filter(
-        models.Commercant.idcommercant == data.idCommercant
-    ).first()
+    commercant = (
+        db.query(models.Commercant)
+        .filter(models.Commercant.idcommercant == data.idCommercant)
+        .first()
+    )
     pays = commercant.pays if commercant else None
 
-    # 1) créer la transaction
     t = models.Transaction(
         date_heure=data.date_heure,
         montant=data.montant,
@@ -128,7 +123,6 @@ def create_transaction(
     db.commit()
     db.refresh(t)
 
-    # 2) feature store comportemental (DB -> features)
     features: Dict[str, Any] = compute_behavior_features(
         db=db,
         client_id=t.idclient,
@@ -139,36 +133,31 @@ def create_transaction(
         commercant_pays=pays,
     )
 
-    # 3) scoring (réel: XGBoost + IsolationForest)
     decision = evaluate_transaction(
         montant=float(t.montant),
         canal=t.canal,
         pays=pays,
-        ml_features=features,   # IMPORTANT: on passe les features !
+        ml_features=features,
     )
 
-    # 4) reason codes (explicabilité)
     reason_codes: List[str] = build_reason_codes(
         features=features,
         score_xgb=float(decision.score_xgb),
         score_iforest=float(decision.score_iforest),
     )
 
-    # 5) stocker features + reason_codes dans la DB
-    # (nécessite que Transaction ait des colonnes JSON: features, reason_codes)
     t.features = features
     t.reason_codes = reason_codes
     db.add(t)
     db.commit()
     db.refresh(t)
 
-    # 6) créer les prédictions (2 lignes)
     pred_xgb = models.PredictionModele(
         nom_modele="XGBoost",
         version_modele="real-v1",
         score_risque=float(decision.score_xgb),
         est_anomalie=False,
-        seuil=None,  # optionnel
+        seuil=None,
         idtransac=t.idtransac,
     )
     pred_if = models.PredictionModele(
@@ -185,19 +174,20 @@ def create_transaction(
     db.commit()
     db.refresh(pred_xgb)
 
-    # 7) créer l’alerte (1 par transaction)
     alerte = models.Alerte(
         criticite=decision.criticite,
         statut="OUVERTE",
         raison=decision.raison,
         idtransac=t.idtransac,
-        idmod=pred_xgb.idmod,   # modèle principal
+        idmod=pred_xgb.idmod,
     )
     db.add(alerte)
     db.commit()
+    db.refresh(alerte)
 
     return {
         "idTransac": str(t.idtransac),
+        "idAlerte": str(alerte.idalerte),
         "mode": "REAL_ML",
         "score_final": float(decision.score_final),
         "score_xgb": float(decision.score_xgb),
@@ -209,9 +199,6 @@ def create_transaction(
         "message": "Transaction analysée",
     }
 
-import random
-from uuid import UUID
-from datetime import datetime, timezone, timedelta
 
 @router.post("/simulate")
 def simulate_transactions(
@@ -221,10 +208,17 @@ def simulate_transactions(
 ):
     count = max(1, min(count, 200))
 
-    # Reuse demo entities if exist, else create minimal ones
     client = db.query(models.Client).filter(models.Client.reference_externe == "CLT-0001").first()
     if not client:
-        client = models.Client(nom="Dupont", prenom="Amine", reference_externe="CLT-0001", segment="STANDARD")
+        client = models.Client(
+            nom="Dupont",
+            prenom="Amine",
+            reference_externe="CLT-0001",
+            segment="STANDARD",
+            pays_residence="France",
+            revenu_mensuel_estime=3200,
+            plafond_carte_journalier=1500,
+        )
         db.add(client)
         db.commit()
         db.refresh(client)
@@ -236,7 +230,7 @@ def simulate_transactions(
             emetteur="VISA",
             mois_expiration=8,
             annee_expiration=2029,
-            idclient=client.idclient
+            idclient=client.idclient,
         )
         db.add(carte)
         db.commit()
@@ -244,7 +238,12 @@ def simulate_transactions(
 
     commercant = db.query(models.Commercant).filter(models.Commercant.nom == "TechStore Paris").first()
     if not commercant:
-        commercant = models.Commercant(nom="TechStore Paris", categorie="Electronics", pays="France", ville="Paris")
+        commercant = models.Commercant(
+            nom="TechStore Paris",
+            categorie="Electronics",
+            pays="France",
+            ville="Paris",
+        )
         db.add(commercant)
         db.commit()
         db.refresh(commercant)
@@ -253,7 +252,7 @@ def simulate_transactions(
     elev = 0
     now = datetime.now(timezone.utc)
 
-    for i in range(count):
+    for _ in range(count):
         montant = round(random.uniform(5, 2500), 2)
         canal = random.choice(["POS", "E_COMMERCE", "DAB"])
         statut = random.choice(["ACCEPTEE", "ACCEPTEE", "ACCEPTEE", "EN_ATTENTE", "REFUSEE"])
@@ -267,7 +266,7 @@ def simulate_transactions(
             montant=montant,
             devise="EUR",
             canal=canal,
-            statut=statut
+            statut=statut,
         )
 
         res = create_transaction(payload, db=db, current_user=current_user)
@@ -277,7 +276,6 @@ def simulate_transactions(
 
     return {"created": created, "elev_count": elev, "message": "Simulation terminée"}
 
-from fastapi import HTTPException
 
 @router.get("/{idtransac}")
 def get_transaction(
@@ -301,9 +299,18 @@ def get_transaction(
         "devise": t.devise,
         "canal": t.canal,
         "statut": t.statut,
-        "client": {"nom": t.client.nom, "prenom": t.client.prenom} if t.client else None,
-        "commercant": {"nom": t.commercant.nom, "categorie": t.commercant.categorie, "pays": t.commercant.pays, "ville": t.commercant.ville} if t.commercant else None,
+        "client": {
+            "nom": t.client.nom,
+            "prenom": t.client.prenom,
+        } if t.client else None,
+        "commercant": {
+            "nom": t.commercant.nom,
+            "categorie": t.commercant.categorie,
+            "pays": t.commercant.pays,
+            "ville": t.commercant.ville,
+        } if t.commercant else None,
         "alerte": {
+            "idAlerte": str(alerte.idalerte) if alerte else None,
             "criticite": alerte.criticite if alerte else None,
             "statut": alerte.statut if alerte else None,
             "score_final": score_final,

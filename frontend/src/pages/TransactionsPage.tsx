@@ -4,6 +4,8 @@ import { AppShell } from "../layout/AppShell";
 import { useAuth } from "../auth/AuthContext";
 import { getTransaction, listTransactions, type TxItem } from "../api/transactions";
 import { simulateFlux, downloadAlertsCsv } from "../api/actions";
+import { createValidation } from "../api/validations";
+import cardImg from "../assets/visa-card.png";
 
 export function TransactionsPage() {
   const { user, logout } = useAuth();
@@ -18,7 +20,7 @@ export function TransactionsPage() {
 
   // ✅ détails affichés uniquement si "Voir" est cliqué
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<TxItem | null>(null);
+  const [selected, setSelected] = useState<any | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const pageSize = 10;
@@ -44,7 +46,7 @@ export function TransactionsPage() {
     setSelectedId(id);
     setLoadingDetail(true);
     try {
-      const d = await getTransaction(id);
+      const d = await getTransaction(id); // idéal: endpoint detail
       setSelected(d);
     } catch {
       // fallback si endpoint absent
@@ -137,19 +139,13 @@ export function TransactionsPage() {
                   ) : (
                     rows.map((t) => (
                       <tr key={t.idTransac} className="border-b border-white/10">
-                        <td className="py-3 text-white/85 truncate">
-                          {t.idTransac.slice(0, 6)}…
-                        </td>
+                        <td className="py-3 text-white/85 truncate">{t.idTransac.slice(0, 6)}…</td>
                         <td className="py-3 text-white/85 truncate">
                           {t.client ? `${t.client.nom} ${t.client.prenom || ""}` : "—"}
                         </td>
                         <td className="py-3 text-white/85 truncate">{t.canal}</td>
-                        <td className="py-3 text-white/85 truncate">
-                          € {Number(t.montant).toFixed(2)}
-                        </td>
-                        <td className="py-3 text-white/85 truncate">
-                          {t.commercant?.nom || "—"}
-                        </td>
+                        <td className="py-3 text-white/85 truncate">€ {Number(t.montant).toFixed(2)}</td>
+                        <td className="py-3 text-white/85 truncate">{t.commercant?.nom || "—"}</td>
                         <td className="py-3">
                           <StatusBadge statut={t.statut} />
                         </td>
@@ -176,18 +172,13 @@ export function TransactionsPage() {
                 <div className="py-10 text-center text-white/60">Aucune transaction trouvée.</div>
               ) : (
                 rows.map((t) => (
-                  <div
-                    key={t.idTransac}
-                    className="rounded-2xl border border-white/10 bg-white/5 p-4"
-                  >
+                  <div key={t.idTransac} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-white/85 font-semibold truncate">
                           {t.client ? `${t.client.nom} ${t.client.prenom || ""}` : "—"}
                         </div>
-                        <div className="text-white/60 text-xs truncate">
-                          {t.idTransac.slice(0, 12)}…
-                        </div>
+                        <div className="text-white/60 text-xs truncate">{t.idTransac.slice(0, 12)}…</div>
                       </div>
                       <StatusBadge statut={t.statut} />
                     </div>
@@ -261,7 +252,7 @@ export function TransactionsPage() {
             ) : !selected ? (
               <div className="text-white/60 text-sm">Détails introuvables.</div>
             ) : (
-              <TxDetails tx={selected} />
+              <TxDetails tx={selected} cardImg={cardImg} />
             )}
           </section>
         </div>
@@ -287,38 +278,79 @@ function StatusBadge({ statut }: { statut: string }) {
       ? "bg-red-500/25 border-red-300/20 text-red-100"
       : "bg-yellow-500/25 border-yellow-300/20 text-yellow-100";
 
-  const label =
-    statut === "ACCEPTEE" ? "Acceptée" : statut === "REFUSEE" ? "Refusée" : "En attente";
+  const label = statut === "ACCEPTEE" ? "Acceptée" : statut === "REFUSEE" ? "Refusée" : "En attente";
 
   return <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${cls}`}>{label}</span>;
 }
 
-function RiskBadge({ criticite, score }: { criticite?: string | null; score?: number | null }) {
-  const c = criticite || "—";
-  const s = score == null ? null : Number(score);
+function CritBadge({ criticite }: { criticite: string }) {
   const cls =
-    c === "ELEVE"
-      ? "bg-red-500/20 border-red-300/20 text-red-100"
-      : c === "MOYEN"
-      ? "bg-yellow-500/20 border-yellow-300/20 text-yellow-100"
-      : c === "FAIBLE"
-      ? "bg-emerald-500/20 border-emerald-300/20 text-emerald-100"
-      : "bg-white/5 border-white/10 text-white/70";
+    criticite === "ELEVE"
+      ? "bg-red-500/25 border-red-300/20 text-red-100"
+      : criticite === "MOYEN"
+      ? "bg-yellow-500/25 border-yellow-300/20 text-yellow-100"
+      : "bg-emerald-500/25 border-emerald-300/20 text-emerald-100";
+
+  return <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${cls}`}>{criticite}</span>;
+}
+
+function Gauge({ percent }: { percent: number }) {
+  const angle = Math.max(0, Math.min(100, percent)) * 3.6;
 
   return (
-    <div className={`rounded-xl border ${cls} px-4 py-3`}>
-      <div className="text-xs opacity-80 mb-1">Risque</div>
-      <div className="text-2xl font-bold">{s == null ? "—" : s.toFixed(2)}</div>
-      <div className="text-xs opacity-80 mt-1">{c}</div>
+    <div className="relative h-[92px] w-[92px]">
+      <div
+        className="absolute inset-0 rounded-full"
+        style={{
+          background: `conic-gradient(rgba(255,80,80,0.95) 0deg ${angle}deg, rgba(255,255,255,0.10) ${angle}deg 360deg)`,
+        }}
+      />
+      <div className="absolute inset-[10px] rounded-full bg-[#081a33]/70 border border-white/10" />
+      <div className="absolute inset-0 flex items-center justify-center flex-col">
+        <div className="text-white font-bold text-lg">{percent}%</div>
+        <div className="text-white/60 text-[10px] -mt-1">Risque</div>
+      </div>
     </div>
   );
 }
 
-function TxDetails({ tx }: { tx: any }) {
+function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
   const score = tx?.alerte?.score_final ?? null;
   const criticite = tx?.alerte?.criticite ?? null;
   const reasons: string[] = tx?.reason_codes || [];
   const features = tx?.features || null;
+
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const score01 = score == null ? 0 : Math.max(0, Math.min(1, Number(score)));
+  const percent = Math.round(score01 * 100);
+
+  // IMPORTANT: ton backend doit renvoyer idAlerte (sinon on patch backend)
+  const idAlerte: string | null = tx?.alerte?.idAlerte || null;
+
+  async function decide(decision: "LEGITIME" | "FRAUDE") {
+    if (!idAlerte) {
+      setMsg("ID alerte manquant (on va le rajouter côté backend).");
+      return;
+    }
+
+    setMsg(null);
+    setBusy(true);
+    try {
+      await createValidation({
+        idAlerte,
+        decision,
+        commentaire: comment || (decision === "FRAUDE" ? "Fraude confirmée." : "Transaction légitime."),
+      });
+      setMsg("Décision enregistrée ✅");
+    } catch (e: any) {
+      setMsg(e?.response?.data?.detail || "Erreur lors de l’enregistrement.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -326,21 +358,48 @@ function TxDetails({ tx }: { tx: any }) {
         #{tx.idTransac.slice(0, 10)} • {new Date(tx.date_heure).toLocaleString()}
       </div>
 
+      {/* Carte + infos */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-white/70 text-sm mb-2">Montant</div>
-        <div className="text-2xl font-extrabold">
-          € {Number(tx.montant).toFixed(2)} <span className="text-white/60 text-base">{tx.devise}</span>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-white/80 text-sm font-semibold">{tx.statut || "En attente"}</div>
+          <span className="text-white/60 text-xs">{tx.canal}</span>
         </div>
-        <div className="text-white/70 text-sm mt-2">
-          Canal : <span className="text-white/90">{tx.canal}</span>
-        </div>
-        <div className="text-white/70 text-sm">
-          Statut : <span className="text-white/90">{tx.statut}</span>
+
+        <img src={cardImg} alt="" className="w-full rounded-xl border border-white/10" />
+
+        <div className="mt-4 text-sm text-white/80 space-y-1">
+          <div className="flex justify-between">
+            <span className="text-white/60">Montant</span>
+            <span className="text-white/90">€ {Number(tx.montant).toFixed(2)}</span>
+          </div>
+
+          <div className="flex justify-between">
+            <span className="text-white/60">Client</span>
+            <span className="text-white/90">
+              {tx.client ? `${tx.client.nom} ${tx.client.prenom || ""}` : "—"}
+            </span>
+          </div>
+
+          <div className="flex justify-between">
+            <span className="text-white/60">Commerçant</span>
+            <span className="text-white/90">{tx.commercant?.nom || "—"}</span>
+          </div>
         </div>
       </div>
 
-      <RiskBadge criticite={criticite} score={score} />
+      {/* Jauge */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-between">
+        <div>
+          <div className="text-white/70 text-sm mb-1">Score de risque</div>
+          <div className="text-white/90 font-bold text-2xl">{score == null ? "—" : score01.toFixed(2)}</div>
+          <div className="mt-2">
+            <CritBadge criticite={criticite || "FAIBLE"} />
+          </div>
+        </div>
+        <Gauge percent={percent} />
+      </div>
 
+      {/* Reason codes */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="text-white/70 text-sm mb-2">Reason codes</div>
         {reasons.length === 0 ? (
@@ -356,21 +415,51 @@ function TxDetails({ tx }: { tx: any }) {
         )}
       </div>
 
+      {/* Commentaire + actions */}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="text-white/70 text-sm mb-2">Commentaire analyste</div>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          rows={3}
+          placeholder="Ex: montant élevé + pays inhabituel + activité intense…"
+          className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm"
+        />
+
+        {msg && <div className="mt-3 text-sm text-white/80">{msg}</div>}
+
+        <div className="mt-4 flex gap-3">
+          <button
+            disabled={busy}
+            onClick={() => decide("LEGITIME")}
+            className="flex-1 rounded-xl px-4 py-3 bg-emerald-500/20 border border-emerald-300/20 hover:bg-emerald-500/25 transition text-sm font-semibold disabled:opacity-60"
+          >
+            Valider la transaction
+          </button>
+
+          <button
+            disabled={busy}
+            onClick={() => decide("FRAUDE")}
+            className="flex-1 rounded-xl px-4 py-3 bg-red-500/20 border border-red-300/20 hover:bg-red-500/25 transition text-sm font-semibold disabled:opacity-60"
+          >
+            Rejeter la transaction
+          </button>
+        </div>
+      </div>
+
+      {/* Features (pro, optionnel) */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="text-white/70 text-sm mb-2">Features</div>
         {!features ? (
           <div className="text-white/60 text-sm">—</div>
         ) : (
           <div className="text-xs text-white/80 space-y-1">
-            {Object.entries(features).slice(0, 14).map(([k, v]) => (
+            {Object.entries(features).slice(0, 12).map(([k, v]) => (
               <div key={k} className="flex items-center justify-between gap-3">
                 <div className="text-white/60">{k}</div>
                 <div className="text-white/90 truncate">{String(v)}</div>
               </div>
             ))}
-            {Object.keys(features).length > 14 && (
-              <div className="text-white/50 mt-2">+ {Object.keys(features).length - 14} autres…</div>
-            )}
           </div>
         )}
       </div>
