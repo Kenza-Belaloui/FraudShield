@@ -1,5 +1,10 @@
 import { api } from "./client";
 
+export type TxReasonDetail = {
+  code: string;
+  label: string;
+};
+
 export type TxItem = {
   idTransac: string;
   date_heure: string;
@@ -9,9 +14,18 @@ export type TxItem = {
   statut: string;
   client?: { nom: string; prenom?: string | null } | null;
   commercant?: { nom: string } | null;
-  alerte?: { criticite?: string | null; statut?: string | null; score_final?: number | null } | null;
+  alerte?: {
+    idAlerte?: string | null;
+    criticite?: string | null;
+    statut?: string | null;
+    score_final?: number | null;
+    raison?: string | null;
+    date_creation?: string | null;
+    date_cloture?: string | null;
+  } | null;
   features?: any;
   reason_codes?: string[] | null;
+  reason_details?: TxReasonDetail[] | null;
 };
 
 export type TxListResponse = {

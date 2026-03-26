@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.core.deps import get_current_user, get_db
+from app.services.reason_labels import REASON_LABELS
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -27,7 +29,7 @@ def dashboard_summary(
 
     alertes_actives = (
         db.query(func.count(models.Alerte.idalerte))
-        .filter(models.Alerte.statut == "OUVERTE")
+        .filter(models.Alerte.statut.in_(["OUVERTE", "EN_COURS"]))
         .scalar()
     ) or 0
 
@@ -37,14 +39,30 @@ def dashboard_summary(
         .scalar()
     ) or 0
 
-    fraud_alerts_7d = (
+    total_alerts_7d = (
         db.query(func.count(models.Alerte.idalerte))
         .filter(models.Alerte.date_creation >= since_7d)
-        .filter(models.Alerte.criticite == "ELEVE")
         .scalar()
     ) or 0
 
-    taux_fraude_7j = (fraud_alerts_7d / total_tx_7d * 100.0) if total_tx_7d else 0.0
+    confirmed_fraud_7d = (
+        db.query(func.count(models.Validation.idval))
+        .join(models.Alerte, models.Validation.idalerte == models.Alerte.idalerte)
+        .filter(models.Validation.date_creation >= since_7d)
+        .filter(models.Validation.decision == "FRAUDE")
+        .scalar()
+    ) or 0
+
+    confirmed_legit_7d = (
+        db.query(func.count(models.Validation.idval))
+        .join(models.Alerte, models.Validation.idalerte == models.Alerte.idalerte)
+        .filter(models.Validation.date_creation >= since_7d)
+        .filter(models.Validation.decision == "LEGITIME")
+        .scalar()
+    ) or 0
+
+    taux_alerte_7j = (total_alerts_7d / total_tx_7d * 100.0) if total_tx_7d else 0.0
+    taux_fraude_confirmee_7j = (confirmed_fraud_7d / total_tx_7d * 100.0) if total_tx_7d else 0.0
 
     temps_moyen_analyse_ms = 120
 
@@ -59,6 +77,34 @@ def dashboard_summary(
     for c, n in rows:
         if c in criticite_distribution_7j:
             criticite_distribution_7j[c] = int(n)
+
+    top_reason_counter = Counter()
+    tx_with_reason = (
+        db.query(models.Transaction.reason_codes)
+        .filter(models.Transaction.date_heure >= since_7d)
+        .filter(models.Transaction.reason_codes.isnot(None))
+        .all()
+    )
+    for (codes,) in tx_with_reason:
+        for code in (codes or []):
+            top_reason_counter[code] += 1
+
+    top_reason_codes = [
+        {
+            "code": code,
+            "label": REASON_LABELS.get(code, code),
+            "count": count,
+        }
+        for code, count in top_reason_counter.most_common(5)
+    ]
+
+    channel_rows = (
+        db.query(models.Transaction.canal, func.count(models.Transaction.idtransac))
+        .filter(models.Transaction.date_heure >= since_7d)
+        .group_by(models.Transaction.canal)
+        .all()
+    )
+    transactions_by_channel_7j = {canal: int(n) for canal, n in channel_rows}
 
     recent = (
         db.query(models.Alerte)
@@ -86,9 +132,14 @@ def dashboard_summary(
     return {
         "transactions_24h": int(transactions_24h),
         "alertes_actives": int(alertes_actives),
-        "taux_fraude_7j": float(taux_fraude_7j),
+        "taux_alerte_7j": float(taux_alerte_7j),
+        "taux_fraude_confirmee_7j": float(taux_fraude_confirmee_7j),
+        "confirmed_fraud_7d": int(confirmed_fraud_7d),
+        "confirmed_legit_7d": int(confirmed_legit_7d),
         "temps_moyen_analyse_ms": int(temps_moyen_analyse_ms),
         "criticite_distribution_7j": criticite_distribution_7j,
+        "transactions_by_channel_7j": transactions_by_channel_7j,
+        "top_reason_codes": top_reason_codes,
         "recent_alerts": recent_alerts,
     }
 
@@ -105,6 +156,7 @@ def dashboard_timeseries(
 
     day_tx = func.date_trunc("day", models.Transaction.date_heure)
     day_al = func.date_trunc("day", models.Alerte.date_creation)
+    day_val = func.date_trunc("day", models.Validation.date_creation)
 
     tx_rows = (
         db.query(day_tx.label("day"), func.count(models.Transaction.idtransac))
@@ -123,9 +175,9 @@ def dashboard_timeseries(
     )
 
     fraud_rows = (
-        db.query(day_al.label("day"), func.count(models.Alerte.idalerte))
-        .filter(models.Alerte.date_creation >= since)
-        .filter(models.Alerte.criticite == "ELEVE")
+        db.query(day_val.label("day"), func.count(models.Validation.idval))
+        .filter(models.Validation.date_creation >= since)
+        .filter(models.Validation.decision == "FRAUDE")
         .group_by("day")
         .order_by("day")
         .all()
@@ -146,14 +198,14 @@ def dashboard_timeseries(
         day = (since.date() + timedelta(days=i)).isoformat()
         tx = tx_map.get(day, 0)
         alerts = al_map.get(day, 0)
-        fraud = fraud_map.get(day, 0)
-        fraud_rate = (fraud / tx * 100.0) if tx else 0.0
+        confirmed_fraud = fraud_map.get(day, 0)
+        fraud_rate = (confirmed_fraud / tx * 100.0) if tx else 0.0
 
         series.append({
             "date": day,
             "transactions": tx,
             "alertes": alerts,
-            "fraude_eleve": fraud,
+            "fraude_confirmee": confirmed_fraud,
             "taux_fraude": round(float(fraud_rate), 3),
         })
 

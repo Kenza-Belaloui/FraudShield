@@ -1,11 +1,17 @@
 import { api } from "./client";
 
+export type AlertReasonDetail = {
+  code: string;
+  label: string;
+};
+
 export type AlertItem = {
   idAlerte: string;
   criticite: "FAIBLE" | "MOYEN" | "ELEVE";
   statut: "OUVERTE" | "EN_COURS" | "CLOTUREE";
   raison?: string | null;
   date_creation: string;
+  date_cloture?: string | null;
   score_final: number | null;
   transaction: {
     idTransac: string;
@@ -13,9 +19,12 @@ export type AlertItem = {
     montant: number;
     devise: string;
     canal: string;
+    statut: string;
   };
   client: { nom: string; prenom?: string | null };
   commercant: { nom: string; categorie?: string | null };
+  reason_codes?: string[] | null;
+  reason_details?: AlertReasonDetail[] | null;
 };
 
 export type AlertsResponse = {

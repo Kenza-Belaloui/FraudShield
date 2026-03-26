@@ -3,9 +3,18 @@ import { api } from "./client";
 export type DashboardSummary = {
   transactions_24h: number;
   alertes_actives: number;
-  taux_fraude_7j: number;
+  taux_alerte_7j: number;
+  taux_fraude_confirmee_7j: number;
+  confirmed_fraud_7d: number;
+  confirmed_legit_7d: number;
   temps_moyen_analyse_ms: number;
   criticite_distribution_7j: Record<string, number>;
+  transactions_by_channel_7j: Record<string, number>;
+  top_reason_codes: Array<{
+    code: string;
+    label: string;
+    count: number;
+  }>;
   recent_alerts: Array<{
     idAlerte: string;
     date_creation: string;
@@ -23,7 +32,7 @@ export type DashboardTimeseries = {
     date: string;
     transactions: number;
     alertes: number;
-    fraude_eleve: number;
+    fraude_confirmee: number;
     taux_fraude: number;
   }>;
 };

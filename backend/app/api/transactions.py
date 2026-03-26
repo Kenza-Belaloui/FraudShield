@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.core.deps import get_current_user, get_db
+from app.core.settings import CRIT_MED_MAX
 from app.services.feature_store import compute_behavior_features
 from app.services.fraud_engine import evaluate_transaction
 from app.services.reason_codes import build_reason_codes
+from app.services.reason_labels import REASON_LABELS
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -26,6 +28,16 @@ class TransactionCreate(BaseModel):
     devise: str = "EUR"
     canal: str
     statut: str
+
+
+def _humanize_reason_codes(reason_codes: List[str]) -> List[dict]:
+    return [
+        {
+            "code": code,
+            "label": REASON_LABELS.get(code, code),
+        }
+        for code in reason_codes
+    ]
 
 
 @router.get("")
@@ -69,6 +81,8 @@ def list_transactions(
         if alerte and getattr(alerte, "prediction_principale", None):
             score_final = float(alerte.prediction_principale.score_risque)
 
+        raw_reason_codes = getattr(t, "reason_codes", None) or []
+
         items.append({
             "idTransac": str(t.idtransac),
             "date_heure": t.date_heure.isoformat(),
@@ -88,9 +102,10 @@ def list_transactions(
                 "criticite": alerte.criticite if alerte else None,
                 "statut": alerte.statut if alerte else None,
                 "score_final": score_final,
-            },
+            } if alerte else None,
             "features": getattr(t, "features", None),
-            "reason_codes": getattr(t, "reason_codes", None),
+            "reason_codes": raw_reason_codes,
+            "reason_details": _humanize_reason_codes(raw_reason_codes),
         })
 
     return {"items": items, "page": page, "page_size": page_size, "total": total}
@@ -148,6 +163,13 @@ def create_transaction(
 
     t.features = features
     t.reason_codes = reason_codes
+
+    # Statut transaction métier
+    if decision.score_final >= CRIT_MED_MAX:
+        t.statut = "EN_ATTENTE"
+    else:
+        t.statut = "ACCEPTEE"
+
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -174,20 +196,24 @@ def create_transaction(
     db.commit()
     db.refresh(pred_xgb)
 
-    alerte = models.Alerte(
-        criticite=decision.criticite,
-        statut="OUVERTE",
-        raison=decision.raison,
-        idtransac=t.idtransac,
-        idmod=pred_xgb.idmod,
-    )
-    db.add(alerte)
-    db.commit()
-    db.refresh(alerte)
+    alerte = None
+
+    # ✅ on ne crée une alerte que si le score est au moins MOYEN
+    if float(decision.score_final) >= float(CRIT_MED_MAX):
+        alerte = models.Alerte(
+            criticite=decision.criticite,
+            statut="OUVERTE",
+            raison=decision.raison,
+            idtransac=t.idtransac,
+            idmod=pred_xgb.idmod,
+        )
+        db.add(alerte)
+        db.commit()
+        db.refresh(alerte)
 
     return {
         "idTransac": str(t.idtransac),
-        "idAlerte": str(alerte.idalerte),
+        "idAlerte": str(alerte.idalerte) if alerte else None,
         "mode": "REAL_ML",
         "score_final": float(decision.score_final),
         "score_xgb": float(decision.score_xgb),
@@ -195,7 +221,10 @@ def create_transaction(
         "criticite": decision.criticite,
         "raison": decision.raison,
         "reason_codes": reason_codes,
+        "reason_details": _humanize_reason_codes(reason_codes),
         "features": features,
+        "transaction_statut": t.statut,
+        "alert_created": alerte is not None,
         "message": "Transaction analysée",
     }
 
@@ -236,26 +265,27 @@ def simulate_transactions(
         db.commit()
         db.refresh(carte)
 
-    commercant = db.query(models.Commercant).filter(models.Commercant.nom == "TechStore Paris").first()
-    if not commercant:
-        commercant = models.Commercant(
-            nom="TechStore Paris",
-            categorie="Electronics",
-            pays="France",
-            ville="Paris",
-        )
-        db.add(commercant)
+    commercants = db.query(models.Commercant).all()
+    if not commercants:
+        demo_commercants = [
+            models.Commercant(nom="TechStore Paris", categorie="Electronics", pays="France", ville="Paris"),
+            models.Commercant(nom="Global Fashion", categorie="Retail", pays="Spain", ville="Madrid"),
+            models.Commercant(nom="CashPoint ATM", categorie="ATM", pays="France", ville="Lyon"),
+            models.Commercant(nom="Night Market", categorie="Food", pays="Belgium", ville="Brussels"),
+        ]
+        db.add_all(demo_commercants)
         db.commit()
-        db.refresh(commercant)
+        commercants = db.query(models.Commercant).all()
 
     created = 0
     elev = 0
+    alerts_created = 0
     now = datetime.now(timezone.utc)
 
     for _ in range(count):
+        commercant = random.choice(commercants)
         montant = round(random.uniform(5, 2500), 2)
         canal = random.choice(["POS", "E_COMMERCE", "DAB"])
-        statut = random.choice(["ACCEPTEE", "ACCEPTEE", "ACCEPTEE", "EN_ATTENTE", "REFUSEE"])
         dt = now - timedelta(minutes=random.randint(0, 60 * 48))
 
         payload = TransactionCreate(
@@ -266,15 +296,22 @@ def simulate_transactions(
             montant=montant,
             devise="EUR",
             canal=canal,
-            statut=statut,
+            statut="EN_ATTENTE",
         )
 
         res = create_transaction(payload, db=db, current_user=current_user)
         created += 1
         if res.get("criticite") == "ELEVE":
             elev += 1
+        if res.get("alert_created"):
+            alerts_created += 1
 
-    return {"created": created, "elev_count": elev, "message": "Simulation terminée"}
+    return {
+        "created": created,
+        "elev_count": elev,
+        "alerts_created": alerts_created,
+        "message": "Simulation terminée",
+    }
 
 
 @router.get("/{idtransac}")
@@ -291,6 +328,8 @@ def get_transaction(
     score_final = None
     if alerte and getattr(alerte, "prediction_principale", None):
         score_final = float(alerte.prediction_principale.score_risque)
+
+    raw_reason_codes = getattr(t, "reason_codes", None) or []
 
     return {
         "idTransac": str(t.idtransac),
@@ -315,7 +354,10 @@ def get_transaction(
             "statut": alerte.statut if alerte else None,
             "score_final": score_final,
             "raison": alerte.raison if alerte else None,
+            "date_creation": alerte.date_creation.isoformat() if alerte and alerte.date_creation else None,
+            "date_cloture": alerte.date_cloture.isoformat() if alerte and alerte.date_cloture else None,
         } if alerte else None,
         "features": getattr(t, "features", None),
-        "reason_codes": getattr(t, "reason_codes", None),
+        "reason_codes": raw_reason_codes,
+        "reason_details": _humanize_reason_codes(raw_reason_codes),
     }

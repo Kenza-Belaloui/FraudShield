@@ -317,7 +317,7 @@ function Gauge({ percent }: { percent: number }) {
 function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
   const score = tx?.alerte?.score_final ?? null;
   const criticite = tx?.alerte?.criticite ?? null;
-  const reasons: string[] = tx?.reason_codes || [];
+  const reasons: Array<{ code: string; label: string }> = tx?.reason_details || [];
   const features = tx?.features || null;
 
   const [comment, setComment] = useState("");
@@ -400,20 +400,24 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
       </div>
 
       {/* Reason codes */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-white/70 text-sm mb-2">Reason codes</div>
-        {reasons.length === 0 ? (
-          <div className="text-white/60 text-sm">—</div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {reasons.map((r) => (
-              <span key={r} className="text-xs rounded-full px-3 py-1 bg-white/5 border border-white/10 text-white/85">
-                {r}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="text-white/70 text-sm mb-2">Reason codes</div>
+      {reasons.length === 0 ? (
+        <div className="text-white/60 text-sm">—</div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {reasons.map((r) => (
+            <span
+              key={r.code}
+              className="text-xs rounded-full px-3 py-1 bg-white/5 border border-white/10 text-white/85"
+              title={r.code}
+            >
+              {r.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
 
       {/* Commentaire + actions */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">

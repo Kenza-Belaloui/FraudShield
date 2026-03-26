@@ -1,10 +1,11 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
 
-from app.core.deps import get_db, get_current_user
 from app import models
+from app.core.deps import get_current_user, get_db
 
 router = APIRouter(prefix="/validations", tags=["Validations"])
 
@@ -28,7 +29,6 @@ def create_validation(
     if alerte.statut == "CLOTUREE":
         raise HTTPException(status_code=400, detail="Alerte déjà clôturée")
 
-    # créer validation (traçabilité entreprise)
     v = models.Validation(
         decision=data.decision,
         commentaire=data.commentaire,
@@ -37,11 +37,9 @@ def create_validation(
     )
     db.add(v)
 
-    # mettre à jour alerte
     alerte.statut = "CLOTUREE"
     alerte.date_cloture = datetime.now(timezone.utc)
 
-    # mettre à jour transaction
     tx = alerte.transaction
     if tx:
         if data.decision == "FRAUDE":
@@ -56,6 +54,9 @@ def create_validation(
         "idValidation": str(v.idval),
         "alerte": str(alerte.idalerte),
         "decision": v.decision,
+        "commentaire": v.commentaire,
+        "validated_by": current_user.nom_complet,
         "statut_alerte": alerte.statut,
         "statut_transaction": tx.statut if tx else None,
+        "date_validation": v.date_creation.isoformat() if v.date_creation else None,
     }
