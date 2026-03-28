@@ -5,6 +5,18 @@ export type TxReasonDetail = {
   label: string;
 };
 
+export type TxValidation = {
+  idValidation: string;
+  decision: "FRAUDE" | "LEGITIME";
+  commentaire: string;
+  date_creation?: string | null;
+  utilisateur?: {
+    idUser?: string | null;
+    nom_complet?: string | null;
+    email?: string | null;
+  } | null;
+};
+
 export type TxItem = {
   idTransac: string;
   date_heure: string;
@@ -13,7 +25,7 @@ export type TxItem = {
   canal: string;
   statut: string;
   client?: { nom: string; prenom?: string | null } | null;
-  commercant?: { nom: string } | null;
+  commercant?: { nom: string; categorie?: string | null; pays?: string | null; ville?: string | null } | null;
   alerte?: {
     idAlerte?: string | null;
     criticite?: string | null;
@@ -26,6 +38,7 @@ export type TxItem = {
   features?: any;
   reason_codes?: string[] | null;
   reason_details?: TxReasonDetail[] | null;
+  validations?: TxValidation[] | null;
 };
 
 export type TxListResponse = {

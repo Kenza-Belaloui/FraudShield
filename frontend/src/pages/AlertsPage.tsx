@@ -1,8 +1,8 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AppShell } from "../layout/AppShell";
 import { useAuth } from "../auth/AuthContext";
-import { listAlerts, type AlertItem } from "../api/alerts";
+import { getAlert, listAlerts, takeAlert, type AlertDetail, type AlertItem } from "../api/alerts";
 import { simulateFlux, downloadAlertsCsv } from "../api/actions";
 import { Search, Download, Plus } from "lucide-react";
 
@@ -19,7 +19,11 @@ export function AlertsPage() {
   const [busySim, setBusySim] = useState(false);
   const [rows, setRows] = useState<AlertItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [selected, setSelected] = useState<AlertItem | null>(null);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<AlertDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [taking, setTaking] = useState(false);
 
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -45,6 +49,30 @@ export function AlertsPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, criticite, statut, search]);
+
+  async function openDetail(id: string) {
+    setSelectedId(id);
+    setLoadingDetail(true);
+    try {
+      const detail = await getAlert(id);
+      setSelected(detail);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
+  async function handleTakeAlert() {
+    if (!selectedId) return;
+    try {
+      setTaking(true);
+      await takeAlert(selectedId);
+      const refreshed = await getAlert(selectedId);
+      setSelected(refreshed);
+      await load();
+    } finally {
+      setTaking(false);
+    }
+  }
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(sp);
@@ -114,7 +142,6 @@ export function AlertsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 mb-5">
           <div className="grid grid-cols-12 gap-3">
             <div className="col-span-12 lg:col-span-5">
@@ -161,7 +188,6 @@ export function AlertsPage() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[1100px]">
@@ -195,9 +221,7 @@ export function AlertsPage() {
                   rows.map((a) => (
                     <tr key={a.idAlerte} className="border-b border-white/10">
                       <td className="py-3 text-white/85">{a.transaction.idTransac.slice(0, 10)}…</td>
-                      <td className="py-3 text-white/85">
-                        € {a.transaction.montant.toFixed(2)}
-                      </td>
+                      <td className="py-3 text-white/85">€ {a.transaction.montant.toFixed(2)}</td>
                       <td className="py-3 text-white/85">
                         {a.score_final == null ? "—" : a.score_final.toFixed(4)}
                       </td>
@@ -211,7 +235,7 @@ export function AlertsPage() {
                       <td className="py-3 text-white/85">{a.statut}</td>
                       <td className="py-3 text-right">
                         <button
-                          onClick={() => setSelected(a)}
+                          onClick={() => openDetail(a.idAlerte)}
                           className="rounded-full px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition text-xs"
                         >
                           Voir
@@ -224,7 +248,6 @@ export function AlertsPage() {
             </table>
           </div>
 
-          {/* Pagination */}
           <div className="flex items-center justify-between mt-4 text-sm text-white/70">
             <div>
               Page {page} / {totalPages}
@@ -248,9 +271,17 @@ export function AlertsPage() {
           </div>
         </div>
 
-        {/* Drawer */}
-        {selected && (
-          <AlertDrawer alert={selected} onClose={() => setSelected(null)} />
+        {selectedId && (
+          <AlertDrawer
+            alert={selected}
+            loading={loadingDetail}
+            taking={taking}
+            onTake={handleTakeAlert}
+            onClose={() => {
+              setSelectedId(null);
+              setSelected(null);
+            }}
+          />
         )}
       </div>
     </AppShell>
@@ -268,52 +299,133 @@ function Badge({ criticite }: { criticite: string }) {
   return <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${cls}`}>{criticite}</span>;
 }
 
-function AlertDrawer({ alert, onClose }: { alert: AlertItem; onClose: () => void }) {
+function AlertDrawer({
+  alert,
+  loading,
+  taking,
+  onTake,
+  onClose,
+}: {
+  alert: AlertDetail | null;
+  loading: boolean;
+  taking: boolean;
+  onTake: () => void;
+  onClose: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/45" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-[#081a33]/90 backdrop-blur-xl border-l border-white/10 p-6 overflow-y-auto">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="text-xl font-bold">Détails de l’alerte</div>
-            <div className="text-white/60 text-sm">{new Date(alert.date_creation).toLocaleString()}</div>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg px-3 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
-          >
-            Fermer
-          </button>
-        </div>
+      <div className="absolute right-0 top-0 h-full w-full sm:w-[560px] bg-[#081a33]/90 backdrop-blur-xl border-l border-white/10 p-6 overflow-y-auto">
+        {loading || !alert ? (
+          <div className="text-white/70">Chargement…</div>
+        ) : (
+          <>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="text-xl font-bold">Détails de l’alerte</div>
+                <div className="text-white/60 text-sm">{new Date(alert.date_creation).toLocaleString()}</div>
+              </div>
+              <button
+                onClick={onClose}
+                className="rounded-lg px-3 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
+              >
+                Fermer
+              </button>
+            </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-          <div className="text-white/70 text-sm mb-2">Criticité</div>
-          <Badge criticite={alert.criticite} />
-          <div className="mt-4 text-white/70 text-sm mb-2">Statut</div>
-          <div className="text-white/90">{alert.statut}</div>
-        </div>
+            <div className="flex gap-3 mb-4">
+              {alert.statut !== "CLOTUREE" && (
+                <button
+                  onClick={onTake}
+                  disabled={taking}
+                  className="rounded-xl px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm disabled:opacity-60"
+                >
+                  {taking ? "Prise en charge…" : "Prendre en charge"}
+                </button>
+              )}
+            </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-          <div className="text-white/70 text-sm mb-2">Transaction</div>
-          <div className="text-white/90 text-sm">ID: {alert.transaction.idTransac}</div>
-          <div className="text-white/90 text-sm">Montant: € {alert.transaction.montant.toFixed(2)} {alert.transaction.devise}</div>
-          <div className="text-white/90 text-sm">Canal: {alert.transaction.canal}</div>
-          <div className="text-white/90 text-sm">Date: {new Date(alert.transaction.date_heure).toLocaleString()}</div>
-        </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+              <div className="text-white/70 text-sm mb-2">Criticité</div>
+              <Badge criticite={alert.criticite} />
+              <div className="mt-4 text-white/70 text-sm mb-2">Statut</div>
+              <div className="text-white/90">{alert.statut}</div>
+            </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-          <div className="text-white/70 text-sm mb-2">Client</div>
-          <div className="text-white/90 text-sm">
-            {alert.client.nom} {alert.client.prenom || ""}
-          </div>
-        </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+              <div className="text-white/70 text-sm mb-2">Transaction</div>
+              <div className="text-white/90 text-sm">ID: {alert.transaction.idTransac}</div>
+              <div className="text-white/90 text-sm">
+                Montant: € {alert.transaction.montant.toFixed(2)} {alert.transaction.devise}
+              </div>
+              <div className="text-white/90 text-sm">Canal: {alert.transaction.canal}</div>
+              <div className="text-white/90 text-sm">Statut transaction: {alert.transaction.statut}</div>
+              <div className="text-white/90 text-sm">Date: {new Date(alert.transaction.date_heure).toLocaleString()}</div>
+            </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-white/70 text-sm mb-2">Raison</div>
-          <div className="text-white/90 text-sm whitespace-pre-wrap">
-            {alert.raison || "—"}
-          </div>
-        </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+              <div className="text-white/70 text-sm mb-2">Client & commerçant</div>
+              <div className="text-white/90 text-sm">
+                Client: {alert.client.nom} {alert.client.prenom || ""}
+              </div>
+              <div className="text-white/90 text-sm">Commerçant: {alert.commercant.nom}</div>
+              {alert.commercant.categorie && (
+                <div className="text-white/90 text-sm">Catégorie: {alert.commercant.categorie}</div>
+              )}
+              {alert.commercant.pays && (
+                <div className="text-white/90 text-sm">Pays: {alert.commercant.pays}</div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+              <div className="text-white/70 text-sm mb-2">Reason codes</div>
+              {!alert.reason_details?.length ? (
+                <div className="text-white/60 text-sm">—</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {alert.reason_details.map((r) => (
+                    <span
+                      key={r.code}
+                      className="text-xs rounded-full px-3 py-1 bg-white/5 border border-white/10 text-white/85"
+                      title={r.code}
+                    >
+                      {r.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
+              <div className="text-white/70 text-sm mb-2">Raison</div>
+              <div className="text-white/90 text-sm whitespace-pre-wrap">{alert.raison || "—"}</div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-white/70 text-sm mb-3">Historique analyste</div>
+              {!alert.validations?.length ? (
+                <div className="text-white/60 text-sm">Aucune validation enregistrée.</div>
+              ) : (
+                <div className="space-y-3">
+                  {alert.validations.map((v) => (
+                    <div key={v.idValidation} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <div className="text-sm text-white/90 font-semibold">{v.decision}</div>
+                        <div className="text-xs text-white/50">
+                          {v.date_creation ? new Date(v.date_creation).toLocaleString() : "—"}
+                        </div>
+                      </div>
+                      <div className="text-sm text-white/70">{v.commentaire}</div>
+                      <div className="text-xs text-white/50 mt-2">
+                        {v.utilisateur?.nom_complet || "Utilisateur inconnu"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -319,6 +319,7 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
   const criticite = tx?.alerte?.criticite ?? null;
   const reasons: Array<{ code: string; label: string }> = tx?.reason_details || [];
   const features = tx?.features || null;
+  const validations: Array<any> = tx?.validations || [];
 
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -327,12 +328,11 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
   const score01 = score == null ? 0 : Math.max(0, Math.min(1, Number(score)));
   const percent = Math.round(score01 * 100);
 
-  // IMPORTANT: ton backend doit renvoyer idAlerte (sinon on patch backend)
   const idAlerte: string | null = tx?.alerte?.idAlerte || null;
 
   async function decide(decision: "LEGITIME" | "FRAUDE") {
     if (!idAlerte) {
-      setMsg("ID alerte manquant (on va le rajouter côté backend).");
+      setMsg("Aucune alerte liée à cette transaction.");
       return;
     }
 
@@ -358,7 +358,6 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
         #{tx.idTransac.slice(0, 10)} • {new Date(tx.date_heure).toLocaleString()}
       </div>
 
-      {/* Carte + infos */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-white/80 text-sm font-semibold">{tx.statut || "En attente"}</div>
@@ -384,10 +383,16 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
             <span className="text-white/60">Commerçant</span>
             <span className="text-white/90">{tx.commercant?.nom || "—"}</span>
           </div>
+
+          {tx.commercant?.pays && (
+            <div className="flex justify-between">
+              <span className="text-white/60">Pays marchand</span>
+              <span className="text-white/90">{tx.commercant.pays}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Jauge */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-between">
         <div>
           <div className="text-white/70 text-sm mb-1">Score de risque</div>
@@ -395,29 +400,105 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
           <div className="mt-2">
             <CritBadge criticite={criticite || "FAIBLE"} />
           </div>
+          <div className="mt-3 text-xs text-white/60">
+            Statut alerte : {tx?.alerte?.statut || "Aucune alerte"}
+          </div>
         </div>
         <Gauge percent={percent} />
       </div>
 
-      {/* Reason codes */}
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="text-white/70 text-sm mb-2">Reason codes</div>
-      {reasons.length === 0 ? (
-        <div className="text-white/60 text-sm">—</div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {reasons.map((r) => (
-            <span
-              key={r.code}
-              className="text-xs rounded-full px-3 py-1 bg-white/5 border border-white/10 text-white/85"
-              title={r.code}
-            >
-              {r.label}
-            </span>
-          ))}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="text-white/70 text-sm mb-2">Reason codes</div>
+        {reasons.length === 0 ? (
+          <div className="text-white/60 text-sm">—</div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {reasons.map((r) => (
+              <span
+                key={r.code}
+                className="text-xs rounded-full px-3 py-1 bg-white/5 border border-white/10 text-white/85"
+                title={r.code}
+              >
+                {r.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="text-white/70 text-sm mb-2">Commentaire analyste</div>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          rows={3}
+          placeholder="Ex: montant élevé + pays inhabituel + activité intense…"
+          className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm"
+        />
+
+        {msg && <div className="mt-3 text-sm text-white/80">{msg}</div>}
+
+        <div className="mt-4 flex gap-3">
+          <button
+            disabled={busy || !idAlerte}
+            onClick={() => decide("LEGITIME")}
+            className="flex-1 rounded-xl px-4 py-3 bg-emerald-500/20 border border-emerald-300/20 hover:bg-emerald-500/25 transition text-sm font-semibold disabled:opacity-60"
+          >
+            Valider la transaction
+          </button>
+
+          <button
+            disabled={busy || !idAlerte}
+            onClick={() => decide("FRAUDE")}
+            className="flex-1 rounded-xl px-4 py-3 bg-red-500/20 border border-red-300/20 hover:bg-red-500/25 transition text-sm font-semibold disabled:opacity-60"
+          >
+            Rejeter la transaction
+          </button>
         </div>
-      )}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="text-white/70 text-sm mb-3">Historique de validation</div>
+        {validations.length === 0 ? (
+          <div className="text-white/60 text-sm">Aucune validation enregistrée.</div>
+        ) : (
+          <div className="space-y-3">
+            {validations.map((v) => (
+              <div key={v.idValidation} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <div className="text-sm text-white/90 font-semibold">{v.decision}</div>
+                  <div className="text-xs text-white/50">
+                    {v.date_creation ? new Date(v.date_creation).toLocaleString() : "—"}
+                  </div>
+                </div>
+                <div className="text-sm text-white/70">{v.commentaire}</div>
+                <div className="text-xs text-white/50 mt-2">
+                  {v.utilisateur?.nom_complet || "Utilisateur inconnu"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="text-white/70 text-sm mb-2">Features</div>
+        {!features ? (
+          <div className="text-white/60 text-sm">—</div>
+        ) : (
+          <div className="text-xs text-white/80 space-y-1">
+            {Object.entries(features).slice(0, 14).map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between gap-3">
+                <div className="text-white/60">{k}</div>
+                <div className="text-white/90 truncate">{String(v)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
 
       {/* Commentaire + actions */}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">

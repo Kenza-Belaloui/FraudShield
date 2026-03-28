@@ -164,7 +164,6 @@ def create_transaction(
     t.features = features
     t.reason_codes = reason_codes
 
-    # Statut transaction métier
     if decision.score_final >= CRIT_MED_MAX:
         t.statut = "EN_ATTENTE"
     else:
@@ -198,7 +197,6 @@ def create_transaction(
 
     alerte = None
 
-    # ✅ on ne crée une alerte que si le score est au moins MOYEN
     if float(decision.score_final) >= float(CRIT_MED_MAX):
         alerte = models.Alerte(
             criticite=decision.criticite,
@@ -331,6 +329,21 @@ def get_transaction(
 
     raw_reason_codes = getattr(t, "reason_codes", None) or []
 
+    validations = []
+    if alerte:
+        for v in sorted(alerte.validations, key=lambda x: x.date_creation or alerte.date_creation):
+            validations.append({
+                "idValidation": str(v.idval),
+                "decision": v.decision,
+                "commentaire": v.commentaire,
+                "date_creation": v.date_creation.isoformat() if v.date_creation else None,
+                "utilisateur": {
+                    "idUser": str(v.utilisateur.iduser) if v.utilisateur else None,
+                    "nom_complet": v.utilisateur.nom_complet if v.utilisateur else None,
+                    "email": v.utilisateur.email if v.utilisateur else None,
+                },
+            })
+
     return {
         "idTransac": str(t.idtransac),
         "date_heure": t.date_heure.isoformat(),
@@ -360,4 +373,5 @@ def get_transaction(
         "features": getattr(t, "features", None),
         "reason_codes": raw_reason_codes,
         "reason_details": _humanize_reason_codes(raw_reason_codes),
+        "validations": validations,
     }
