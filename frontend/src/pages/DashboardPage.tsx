@@ -1,398 +1,396 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppShell } from "../layout/AppShell";
 import { useAuth } from "../auth/AuthContext";
-import { downloadAlertsCsv, simulateFlux } from "../api/actions";
-import { getDashboardSummary, getDashboardTimeseries, type DashboardSummary, type DashboardTimeseries } from "../api/dashboard";
+import { getDashboardSummary, getDashboardTimeseries, type DashboardSummary } from "../api/dashboard";
+import { simulateFlux, downloadAlertsCsv } from "../api/actions";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+} from "recharts";
 
 export function DashboardPage() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [timeseries, setTimeseries] = useState<DashboardTimeseries | null>(null);
+  const [data, setData] = useState<DashboardSummary | null>(null);
+  const [series, setSeries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState(7);
+  const [busySim, setBusySim] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function loadData(selectedDays: number = days) {
+  async function loadAll() {
     setLoading(true);
     try {
-      const [s, t] = await Promise.all([
-        getDashboardSummary(),
-        getDashboardTimeseries(selectedDays),
-      ]);
-      setSummary(s);
-      setTimeseries(t);
+      const [s, ts] = await Promise.all([getDashboardSummary(), getDashboardTimeseries(7)]);
+      setData(s);
+      setSeries(ts.series || []);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadData(days);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days]);
+    loadAll();
+  }, []);
 
-  const maxTx = useMemo(() => {
-    if (!timeseries?.series?.length) return 1;
-    return Math.max(...timeseries.series.map((x) => x.transactions), 1);
-  }, [timeseries]);
+  const chartData = useMemo(() => {
+    const d = data?.criticite_distribution_7j || {};
+    return [
+      { criticite: "FAIBLE", count: d["FAIBLE"] || 0 },
+      { criticite: "MOYEN", count: d["MOYEN"] || 0 },
+      { criticite: "ELEVE", count: d["ELEVE"] || 0 },
+    ];
+  }, [data]);
+
+  const channelData = useMemo(() => {
+    const c = data?.transactions_by_channel_7j || {};
+    return Object.entries(c).map(([canal, count]) => ({
+      canal,
+      count,
+    }));
+  }, [data]);
+
+  const hasCriticityData = chartData.some((x) => x.count > 0);
+  const hasSeriesData = series.some((x) => x.transactions > 0 || x.alertes > 0 || x.fraude_confirmee > 0);
+  const hasChannelData = channelData.length > 0;
+
+  async function onSimulate() {
+    try {
+      setBusySim(true);
+      const r = await simulateFlux(30);
+      setNotice(`Simulation terminée : ${r.created} transactions, ${r.elev_count} alertes ÉLEVÉES`);
+      await loadAll();
+      setTimeout(() => setNotice(null), 4000);
+    } finally {
+      setBusySim(false);
+    }
+  }
+
+  async function onExport() {
+    await downloadAlertsCsv();
+  }
+
+  function onOpenCritical() {
+    navigate("/alerts?criticite=ELEVE");
+  }
 
   return (
     <AppShell
       user={user || undefined}
       onLogout={logout}
-      onSimulate={async () => {
-        await simulateFlux(30);
-        await loadData(days);
-      }}
-      onExport={async () => {
-        await downloadAlertsCsv();
-      }}
-      onOpenCritical={() => {
-        window.location.href = "/alerts?criticite=ELEVE&page=1";
-      }}
+      onSimulate={onSimulate}
+      onExport={onExport}
+      onOpenCritical={onOpenCritical}
     >
-      <div className="pt-6 space-y-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="pt-6">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-[30px] font-extrabold tracking-tight">Tableau de bord</h1>
-            <p className="text-white/60 max-w-3xl">
-              Vue consolidée des transactions, alertes, fraudes confirmées et signaux de risque
-              pour le pilotage opérationnel de la plateforme FraudShield.
-            </p>
+            {notice && (
+              <div className="mb-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white/85">
+                {notice}
+              </div>
+            )}
+            <div className="text-white/60 mt-1">
+              Vue synthétique des transactions, alertes et performance du scoring.
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className="rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none text-sm"
-            >
-              <option value={7}>7 jours</option>
-              <option value={14}>14 jours</option>
-              <option value={30}>30 jours</option>
-            </select>
+          <div className="text-white/65 text-sm">
+            Dernière mise à jour : {new Date().toLocaleString()}
           </div>
         </div>
 
-        {loading || !summary || !timeseries ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-8 text-white/70">
-            Chargement du tableau de bord…
-          </div>
-        ) : (
-          <>
-            {/* KPI Cards */}
-            <div className="grid grid-cols-12 gap-5">
-              <KpiCard
-                title="Transactions 24h"
-                value={summary.transactions_24h}
-                subtitle="Flux récent traité"
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
-              <KpiCard
-                title="Alertes actives"
-                value={summary.alertes_actives}
-                subtitle="Ouvertes ou en cours"
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
-              <KpiCard
-                title="Fraudes confirmées 7j"
-                value={summary.confirmed_fraud_7d}
-                subtitle={`${summary.taux_fraude_confirmee_7j.toFixed(2)}% des transactions`}
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
-              <KpiCard
-                title="Temps moyen d'analyse"
-                value={`${summary.temps_moyen_analyse_ms} ms`}
-                subtitle="Temps de scoring moyen"
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
+        <div className="grid grid-cols-12 gap-6">
+          {/* KPI */}
+          <section className="col-span-12 lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
+            <div className="text-sm text-white/70 mb-3 font-semibold flex items-center justify-between">
+              <span>Indicateurs clés</span>
+              {busySim && <span className="text-xs text-white/60">Simulation…</span>}
             </div>
 
-            {/* KPI secondaires */}
-            <div className="grid grid-cols-12 gap-5">
-              <MiniCard
-                title="Taux d'alerte 7j"
-                value={`${summary.taux_alerte_7j.toFixed(2)}%`}
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
-              <MiniCard
-                title="Alertes haute criticité"
-                value={`${summary.taux_alertes_haute_criticite_7j.toFixed(2)}%`}
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
-              <MiniCard
-                title="Faux positifs estimés"
-                value={`${summary.taux_faux_positifs_7j.toFixed(2)}%`}
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
-              <MiniCard
-                title="Alertes créées 7j"
-                value={summary.total_alerts_7d}
-                className="col-span-12 md:col-span-6 xl:col-span-3"
-              />
+            <Kpi title="Transactions analysées (24h)" value={data?.transactions_24h ?? 0} variant="blue" />
+            <Kpi title="Alertes actives" value={data?.alertes_actives ?? 0} variant="red" />
+            <Kpi
+              title="Fraude confirmée (7j)"
+              value={`${(data?.taux_fraude_confirmee_7j ?? 0).toFixed(2)} %`}
+              variant="green"
+            />
+            <Kpi
+              title="Temps moyen d’analyse"
+              value={`${Math.round(data?.temps_moyen_analyse_ms ?? 0)} ms`}
+              variant="cyan"
+            />
+          </section>
+
+          {/* Main chart */}
+          <section className="col-span-12 lg:col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-semibold">Alertes par criticité (7 jours)</div>
+              <div className="text-xs text-white/55">FAIBLE • MOYEN • ÉLEVÉ</div>
             </div>
 
-            {/* Bloc principal */}
-            <div className="grid grid-cols-12 gap-6">
-              <section className="col-span-12 xl:col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <div className="text-lg font-semibold">Évolution activité & fraude confirmée</div>
-                    <div className="text-white/60 text-sm">
-                      Transactions, alertes et fraudes confirmées sur la période sélectionnée
-                    </div>
-                  </div>
+            <div className="h-[300px] rounded-2xl border border-white/10 bg-white/5 p-4">
+              {loading ? (
+                <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+              ) : !hasCriticityData ? (
+                <div className="h-full flex items-center justify-center text-white/50">
+                  Pas assez de données pour afficher la criticité.
                 </div>
-
-                <div className="space-y-3">
-                  {timeseries.series.map((item) => {
-                    const txWidth = `${(item.transactions / maxTx) * 100}%`;
-                    const alWidth = `${(item.alertes / maxTx) * 100}%`;
-                    const frWidth = `${(item.fraude_confirmee / maxTx) * 100}%`;
-
-                    return (
-                      <div key={item.date} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="text-sm font-semibold text-white/90">{item.date}</div>
-                          <div className="text-xs text-white/60">
-                            Taux fraude: {item.taux_fraude.toFixed(2)}%
-                          </div>
-                        </div>
-
-                        <MetricBar label="Transactions" value={item.transactions} width={txWidth} />
-                        <MetricBar label="Alertes" value={item.alertes} width={alWidth} />
-                        <MetricBar label="Fraudes confirmées" value={item.fraude_confirmee} width={frWidth} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <section className="col-span-12 xl:col-span-4 space-y-6">
-                <Panel title="Répartition criticité">
-                  <SimpleStatRow label="Faible" value={summary.criticite_distribution_7j.FAIBLE || 0} />
-                  <SimpleStatRow label="Moyen" value={summary.criticite_distribution_7j.MOYEN || 0} />
-                  <SimpleStatRow label="Élevé" value={summary.criticite_distribution_7j.ELEVE || 0} />
-                </Panel>
-
-                <Panel title="Transactions par canal">
-                  {Object.keys(summary.transactions_by_channel_7j || {}).length === 0 ? (
-                    <div className="text-white/60 text-sm">Aucune donnée.</div>
-                  ) : (
-                    Object.entries(summary.transactions_by_channel_7j).map(([label, value]) => (
-                      <SimpleStatRow key={label} label={label} value={value} />
-                    ))
-                  )}
-                </Panel>
-              </section>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <XAxis dataKey="criticite" stroke="rgba(255,255,255,0.6)" />
+                    <YAxis stroke="rgba(255,255,255,0.6)" />
+                    <Tooltip
+                      contentStyle={{
+                        background: "rgba(10,25,50,0.95)",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 12,
+                        color: "white",
+                      }}
+                    />
+                    <Bar dataKey="count" fill="#2ec5ff" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
-            {/* Blocs premium */}
-            <div className="grid grid-cols-12 gap-6">
-              <section className="col-span-12 xl:col-span-4">
-                <Panel title="Top reason codes">
-                  {!summary.top_reason_codes.length ? (
-                    <div className="text-white/60 text-sm">Aucune donnée disponible.</div>
+            <div className="grid grid-cols-12 gap-4 mt-5">
+              <div className="col-span-12 md:col-span-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-white/70 mb-2 font-semibold">Transactions / jour</div>
+                <div className="h-[140px]">
+                  {loading ? (
+                    <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+                  ) : !hasSeriesData ? (
+                    <div className="h-full flex items-center justify-center text-white/50">Données insuffisantes.</div>
                   ) : (
-                    <div className="space-y-3">
-                      {summary.top_reason_codes.map((r) => (
-                        <div
-                          key={r.code}
-                          className="rounded-xl border border-white/10 bg-white/5 p-3"
-                        >
-                          <div className="text-sm text-white/90 font-semibold">{r.label}</div>
-                          <div className="text-xs text-white/50 mt-1">{r.code}</div>
-                          <div className="text-xs text-white/70 mt-2">Occurrences: {r.count}</div>
-                        </div>
-                      ))}
-                    </div>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={series}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
+                        <YAxis stroke="rgba(255,255,255,0.4)" hide />
+                        <Tooltip
+                          contentStyle={{
+                            background: "rgba(10,25,50,0.9)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            borderRadius: 12,
+                            color: "white",
+                          }}
+                        />
+                        <Line type="monotone" dataKey="transactions" stroke="#2ec5ff" strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   )}
-                </Panel>
-              </section>
-
-              <section className="col-span-12 xl:col-span-4">
-                <Panel title="Commerçants les plus alertés">
-                  {!summary.top_merchants_alerts.length ? (
-                    <div className="text-white/60 text-sm">Aucune donnée disponible.</div>
-                  ) : (
-                    <div className="space-y-3">
-                      {summary.top_merchants_alerts.map((m) => (
-                        <div
-                          key={m.nom}
-                          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"
-                        >
-                          <div className="text-sm text-white/90">{m.nom}</div>
-                          <div className="text-sm font-semibold text-white">{m.count}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Panel>
-              </section>
-
-              <section className="col-span-12 xl:col-span-4">
-                <Panel title="Lecture métier">
-                  <div className="space-y-3 text-sm text-white/80">
-                    <p>
-                      Le dashboard consolide l’activité transactionnelle, la volumétrie d’alertes
-                      et la fraude confirmée afin d’aider les analystes et responsables risque à
-                      prioriser les investigations.
-                    </p>
-                    <p>
-                      Les indicateurs séparent volontairement les <span className="font-semibold">alertes détectées</span>
-                      des <span className="font-semibold">fraudes confirmées</span>, afin de mieux piloter
-                      la qualité du système et le taux de faux positifs.
-                    </p>
-                    <p>
-                      Les top reason codes permettent d’identifier rapidement les schémas dominants :
-                      activité anormale, dépassement de plafond, pays inhabituel ou comportement nocturne.
-                    </p>
-                  </div>
-                </Panel>
-              </section>
-            </div>
-
-            {/* Recent alerts */}
-            <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <div className="text-lg font-semibold">Alertes récentes</div>
-                  <div className="text-white/60 text-sm">
-                    Derniers cas détectés par la plateforme
-                  </div>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[1100px]">
-                  <thead className="text-white/70">
-                    <tr className="border-b border-white/10">
-                      <th className="text-left py-3">Alerte</th>
-                      <th className="text-left py-3">Transaction</th>
-                      <th className="text-left py-3">Client</th>
-                      <th className="text-left py-3">Commerçant</th>
-                      <th className="text-left py-3">Criticité</th>
-                      <th className="text-left py-3">Statut</th>
-                      <th className="text-left py-3">Score</th>
-                      <th className="text-left py-3">Décision analyste</th>
+              <div className="col-span-12 md:col-span-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-white/70 mb-2 font-semibold">Fraude confirmée / jour</div>
+                <div className="h-[140px]">
+                  {loading ? (
+                    <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+                  ) : !hasSeriesData ? (
+                    <div className="h-full flex items-center justify-center text-white/50">Données insuffisantes.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={series}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
+                        <YAxis stroke="rgba(255,255,255,0.4)" hide />
+                        <Tooltip
+                          contentStyle={{
+                            background: "rgba(10,25,50,0.9)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            borderRadius: 12,
+                            color: "white",
+                          }}
+                        />
+                        <Line type="monotone" dataKey="fraude_confirmee" stroke="#00d084" strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Recent alerts */}
+          <section className="col-span-12 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-semibold">Alertes récentes</div>
+              <div className="text-white/60 text-sm">Dernières 7 alertes</div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[900px]">
+                <thead className="text-white/70">
+                  <tr className="border-b border-white/10">
+                    <th className="text-left py-3">N°</th>
+                    <th className="text-left py-3">Date</th>
+                    <th className="text-left py-3">Criticité</th>
+                    <th className="text-left py-3">Statut</th>
+                    <th className="text-left py-3">Score</th>
+                    <th className="text-left py-3">Transaction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.recent_alerts || []).map((a, index) => (
+                    <tr key={a.idAlerte} className="border-b border-white/10">
+                      <td className="py-3 text-white/85 font-semibold">{index + 1}</td>
+                      <td className="py-3 text-white/85">{new Date(a.date_creation).toLocaleString()}</td>
+                      <td className="py-3">
+                        <Badge criticite={a.criticite} />
+                      </td>
+                      <td className="py-3 text-white/85">{a.statut}</td>
+                      <td className="py-3 text-white/85">{Number(a.score_final || 0).toFixed(4)}</td>
+                      <td className="py-3 text-white/85">T-{index + 1}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {summary.recent_alerts.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-8 text-center text-white/60">
-                          Aucune alerte récente.
-                        </td>
-                      </tr>
-                    ) : (
-                      summary.recent_alerts.map((a) => (
-                        <tr key={a.idAlerte} className="border-b border-white/10">
-                          <td className="py-3 text-white/85">{a.idAlerte.slice(0, 8)}…</td>
-                          <td className="py-3 text-white/85">{a.idTransac?.slice(0, 10)}…</td>
-                          <td className="py-3 text-white/85">{a.client || "—"}</td>
-                          <td className="py-3 text-white/85">{a.commercant || "—"}</td>
-                          <td className="py-3">
-                            <SeverityBadge criticite={a.criticite} />
-                          </td>
-                          <td className="py-3 text-white/85">{a.statut}</td>
-                          <td className="py-3 text-white/85">{a.score_final.toFixed(4)}</td>
-                          <td className="py-3 text-white/75">
-                            {a.latest_validation
-                              ? `${a.latest_validation.decision} — ${a.latest_validation.utilisateur || "analyste"}`
-                              : "Non traité"}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
+                  ))}
+
+                  {!loading && (data?.recent_alerts || []).length === 0 && (
+                    <tr>
+                      <td className="py-6 text-white/60" colSpan={6}>
+                        Aucune alerte récente.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* top reasons */}
+          <section className="col-span-12 lg:col-span-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-semibold">Top reason codes</div>
+              <div className="text-white/60 text-sm">Signaux dominants</div>
+            </div>
+
+            <div className="space-y-3">
+              {(data?.top_reason_codes || []).map((r) => (
+                <div
+                  key={r.code}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 flex items-center justify-between"
+                >
+                  <div>
+                    <div className="text-white/90 text-sm font-medium">{r.label}</div>
+                    <div className="text-white/45 text-xs mt-1">{r.code}</div>
+                  </div>
+                  <div className="text-white font-semibold">{r.count}</div>
+                </div>
+              ))}
+
+              {!loading && (data?.top_reason_codes || []).length === 0 && (
+                <div className="text-white/60 text-sm">Aucune donnée disponible.</div>
+              )}
+            </div>
+          </section>
+
+          {/* channels */}
+          <section className="col-span-12 lg:col-span-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-semibold">Répartition par canal</div>
+              <div className="text-white/60 text-sm">POS • E_COMMERCE • DAB</div>
+            </div>
+
+            <div className="grid grid-cols-12 gap-4 mb-5">
+              <MiniInfo
+                label="Taux d'alerte 7j"
+                value={`${(data?.taux_alerte_7j ?? 0).toFixed(2)} %`}
+              />
+              <MiniInfo
+                label="Faux positifs 7j"
+                value={`${(data?.taux_faux_positifs_7j ?? 0).toFixed(2)} %`}
+              />
+              <MiniInfo
+                label="Fraudes confirmées"
+                value={data?.confirmed_fraud_7d ?? 0}
+              />
+              <MiniInfo
+                label="Légitimes confirmées"
+                value={data?.confirmed_legit_7d ?? 0}
+              />
+            </div>
+
+            <div className="h-[220px] rounded-2xl border border-white/10 bg-white/5 p-4">
+              {loading ? (
+                <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+              ) : !hasChannelData ? (
+                <div className="h-full flex items-center justify-center text-white/50">
+                  Aucune donnée par canal.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={channelData}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                    <XAxis dataKey="canal" stroke="rgba(255,255,255,0.6)" />
+                    <YAxis stroke="rgba(255,255,255,0.6)" />
+                    <Tooltip
+                      contentStyle={{
+                        background: "rgba(10,25,50,0.9)",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 12,
+                        color: "white",
+                      }}
+                    />
+                    <Bar dataKey="count" fill="#7c9cff" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </AppShell>
   );
 }
 
-function KpiCard({
+function Kpi({
   title,
   value,
-  subtitle,
-  className = "",
+  variant,
 }: {
   title: string;
-  value: string | number;
-  subtitle?: string;
-  className?: string;
+  value: any;
+  variant: "blue" | "red" | "green" | "cyan";
 }) {
+  const bg =
+    variant === "blue"
+      ? "bg-blue-500/20"
+      : variant === "red"
+      ? "bg-red-500/20"
+      : variant === "green"
+      ? "bg-emerald-500/20"
+      : "bg-cyan-500/20";
+
   return (
-    <div className={`${className} rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5`}>
-      <div className="text-white/60 text-sm mb-2">{title}</div>
-      <div className="text-3xl font-extrabold text-white">{value}</div>
-      {subtitle ? <div className="text-white/50 text-sm mt-2">{subtitle}</div> : null}
+    <div className={`rounded-2xl border border-white/10 ${bg} p-5 mb-4`}>
+      <div className="text-xs text-white/70 mb-2">{title}</div>
+      <div className="text-2xl font-bold">{value}</div>
     </div>
   );
 }
 
-function MiniCard({
-  title,
-  value,
-  className = "",
-}: {
-  title: string;
-  value: string | number;
-  className?: string;
-}) {
+function MiniInfo({ label, value }: { label: string; value: any }) {
   return (
-    <div className={`${className} rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4`}>
-      <div className="text-white/60 text-sm mb-1">{title}</div>
-      <div className="text-xl font-bold text-white">{value}</div>
+    <div className="col-span-6 rounded-xl border border-white/10 bg-white/5 p-4">
+      <div className="text-xs text-white/60 mb-2">{label}</div>
+      <div className="text-lg font-bold text-white">{value}</div>
     </div>
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
-      <div className="text-lg font-semibold mb-4">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function SimpleStatRow({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-white/10 last:border-b-0">
-      <div className="text-white/70 text-sm">{label}</div>
-      <div className="text-white font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function MetricBar({
-  label,
-  value,
-  width,
-}: {
-  label: string;
-  value: number;
-  width: string;
-}) {
-  return (
-    <div className="mb-3">
-      <div className="flex items-center justify-between text-xs text-white/70 mb-1">
-        <span>{label}</span>
-        <span>{value}</span>
-      </div>
-      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-        <div className="h-full rounded-full bg-white/60" style={{ width }} />
-      </div>
-    </div>
-  );
-}
-
-function SeverityBadge({ criticite }: { criticite: string }) {
+function Badge({ criticite }: { criticite: string }) {
   const cls =
     criticite === "ELEVE"
       ? "bg-red-500/25 border-red-300/20 text-red-100"

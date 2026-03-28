@@ -109,7 +109,7 @@ export function TransactionsPage() {
               <table className="w-full text-sm table-fixed">
                 <thead className="text-white/70">
                   <tr className="border-b border-white/10">
-                    <th className="text-left py-3 w-[14%]">ID</th>
+                    <th className="text-left py-3 w-[14%]">N°</th>
                     <th className="text-left py-3 w-[22%]">Client</th>
                     <th className="text-left py-3 w-[14%]">Canal</th>
                     <th className="text-left py-3 w-[16%]">Montant</th>
@@ -135,7 +135,7 @@ export function TransactionsPage() {
                   ) : (
                     rows.map((t) => (
                       <tr key={t.idTransac} className="border-b border-white/10">
-                        <td className="py-3 text-white/85 truncate">{t.idTransac.slice(0, 6)}…</td>
+                        <td className="py-3 text-white/85 truncate">{(page - 1) * pageSize + index + 1}</td>
                         <td className="py-3 text-white/85 truncate">
                           {t.client ? `${t.client.nom} ${t.client.prenom || ""}` : "—"}
                         </td>
@@ -166,14 +166,14 @@ export function TransactionsPage() {
               ) : rows.length === 0 ? (
                 <div className="py-10 text-center text-white/60">Aucune transaction trouvée.</div>
               ) : (
-                rows.map((t) => (
+                rows.map((t, index) => (
                   <div key={t.idTransac} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-white/85 font-semibold truncate">
                           {t.client ? `${t.client.nom} ${t.client.prenom || ""}` : "—"}
                         </div>
-                        <div className="text-white/60 text-xs truncate">{t.idTransac.slice(0, 12)}…</div>
+                        <div className="text-white/60 text-xs truncate">Transaction n° {(page - 1) * pageSize + index + 1}</div>
                       </div>
                       <StatusBadge statut={t.statut} />
                     </div>

@@ -1,78 +1,35 @@
 import { api } from "./client";
 
-export type AlertReasonDetail = {
-  code: string;
-  label: string;
-};
-
-export type AlertValidation = {
-  idValidation: string;
-  decision: "FRAUDE" | "LEGITIME";
-  commentaire: string;
-  date_creation?: string | null;
-  utilisateur?: {
-    idUser?: string | null;
-    nom_complet?: string | null;
-    email?: string | null;
-  } | null;
-};
-
-export type AlertItem = {
-  idAlerte: string;
-  criticite: "FAIBLE" | "MOYEN" | "ELEVE";
-  statut: "OUVERTE" | "EN_COURS" | "CLOTUREE";
-  raison?: string | null;
-  date_creation: string;
-  date_cloture?: string | null;
-  score_final: number | null;
-  transaction: {
-    idTransac: string;
-    date_heure: string;
-    montant: number;
-    devise: string;
-    canal: string;
-    statut: string;
-  };
-  client: { nom: string; prenom?: string | null };
-  commercant: { nom: string; categorie?: string | null; pays?: string | null; ville?: string | null };
-  reason_codes?: string[] | null;
-  reason_details?: AlertReasonDetail[] | null;
-  latest_validation?: AlertValidation | null;
-};
-
-export type AlertDetail = AlertItem & {
-  features?: any;
-  validations?: AlertValidation[];
-};
-
-export type AlertsResponse = {
-  items: AlertItem[];
-  page: number;
-  page_size: number;
-  total: number;
-};
-
-export async function listAlerts(params: {
-  page?: number;
-  page_size?: number;
-  criticite?: string;
-  statut?: string;
-  date_debut?: string;
-  date_fin?: string;
-  montant_min?: number;
-  montant_max?: number;
-  search?: string;
-}) {
-  const res = await api.get<AlertsResponse>("/alerts", { params });
+export async function simulateFlux(count: number = 30) {
+  const res = await api.post("/transactions/simulate", null, { params: { count } });
   return res.data;
 }
 
-export async function getAlert(id: string) {
-  const res = await api.get<AlertDetail>(`/alerts/${id}`);
-  return res.data;
+function extractFilename(contentDisposition?: string | null) {
+  if (!contentDisposition) return "fraudshield_alerts_export.csv";
+  const match = contentDisposition.match(/filename="?([^"]+)"?/i);
+  return match?.[1] || "fraudshield_alerts_export.csv";
 }
 
-export async function takeAlert(id: string) {
-  const res = await api.post(`/alerts/${id}/take`);
-  return res.data;
+export async function downloadAlertsCsv() {
+  const res = await api.get("/alerts/export.csv", {
+    responseType: "blob",
+  });
+
+  const contentType = res.headers["content-type"] || "text/csv;charset=utf-8;";
+  const filename = extractFilename(res.headers["content-disposition"]);
+
+  const blob = new Blob([res.data], { type: contentType });
+  const url = window.URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => {
+    window.URL.revokeObjectURL(url);
+  }, 500);
 }
