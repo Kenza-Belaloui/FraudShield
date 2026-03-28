@@ -18,9 +18,8 @@ export function TransactionsPage() {
   const [rows, setRows] = useState<TxItem[]>([]);
   const [total, setTotal] = useState(0);
 
-  // ✅ détails affichés uniquement si "Voir" est cliqué
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<any | null>(null);
+  const [selected, setSelected] = useState<TxItem | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const pageSize = 10;
@@ -46,10 +45,9 @@ export function TransactionsPage() {
     setSelectedId(id);
     setLoadingDetail(true);
     try {
-      const d = await getTransaction(id); // idéal: endpoint detail
+      const d = await getTransaction(id);
       setSelected(d);
     } catch {
-      // fallback si endpoint absent
       const r = rows.find((x) => x.idTransac === id) || null;
       setSelected(r);
     } finally {
@@ -99,7 +97,6 @@ export function TransactionsPage() {
         </div>
 
         <div className="grid grid-cols-12 gap-6">
-          {/* TABLE */}
           <section className="col-span-12 xl:col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <Pill label="Total" value={total} />
@@ -108,7 +105,6 @@ export function TransactionsPage() {
               <Pill label="En attente" value={pills.pending} />
             </div>
 
-            {/* ✅ Desktop table (NO horizontal scroll) */}
             <div className="hidden lg:block">
               <table className="w-full text-sm table-fixed">
                 <thead className="text-white/70">
@@ -164,7 +160,6 @@ export function TransactionsPage() {
               </table>
             </div>
 
-            {/* ✅ Mobile layout (cards, NO horizontal scroll) */}
             <div className="lg:hidden space-y-3">
               {loading ? (
                 <div className="py-10 text-center text-white/60">Chargement…</div>
@@ -205,7 +200,6 @@ export function TransactionsPage() {
               )}
             </div>
 
-            {/* Pagination */}
             <div className="flex items-center justify-between mt-4 text-sm text-white/70">
               <div>
                 Page {page} / {totalPages}
@@ -229,7 +223,6 @@ export function TransactionsPage() {
             </div>
           </section>
 
-          {/* DETAILS */}
           <section className="col-span-12 xl:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="text-lg font-semibold">Détails de la transaction</div>
@@ -487,64 +480,14 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
           <div className="text-white/60 text-sm">—</div>
         ) : (
           <div className="text-xs text-white/80 space-y-1">
-            {Object.entries(features).slice(0, 14).map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between gap-3">
-                <div className="text-white/60">{k}</div>
-                <div className="text-white/90 truncate">{String(v)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-      {/* Commentaire + actions */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-white/70 text-sm mb-2">Commentaire analyste</div>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          rows={3}
-          placeholder="Ex: montant élevé + pays inhabituel + activité intense…"
-          className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm"
-        />
-
-        {msg && <div className="mt-3 text-sm text-white/80">{msg}</div>}
-
-        <div className="mt-4 flex gap-3">
-          <button
-            disabled={busy}
-            onClick={() => decide("LEGITIME")}
-            className="flex-1 rounded-xl px-4 py-3 bg-emerald-500/20 border border-emerald-300/20 hover:bg-emerald-500/25 transition text-sm font-semibold disabled:opacity-60"
-          >
-            Valider la transaction
-          </button>
-
-          <button
-            disabled={busy}
-            onClick={() => decide("FRAUDE")}
-            className="flex-1 rounded-xl px-4 py-3 bg-red-500/20 border border-red-300/20 hover:bg-red-500/25 transition text-sm font-semibold disabled:opacity-60"
-          >
-            Rejeter la transaction
-          </button>
-        </div>
-      </div>
-
-      {/* Features (pro, optionnel) */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-white/70 text-sm mb-2">Features</div>
-        {!features ? (
-          <div className="text-white/60 text-sm">—</div>
-        ) : (
-          <div className="text-xs text-white/80 space-y-1">
-            {Object.entries(features).slice(0, 12).map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between gap-3">
-                <div className="text-white/60">{k}</div>
-                <div className="text-white/90 truncate">{String(v)}</div>
-              </div>
-            ))}
+            {Object.entries(features)
+              .slice(0, 14)
+              .map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between gap-3">
+                  <div className="text-white/60">{k}</div>
+                  <div className="text-white/90 truncate">{String(v)}</div>
+                </div>
+              ))}
           </div>
         )}
       </div>
