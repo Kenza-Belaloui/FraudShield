@@ -13,7 +13,6 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  CartesianGrid,
 } from "recharts";
 
 export function DashboardPage() {
@@ -57,10 +56,6 @@ export function DashboardPage() {
       count,
     }));
   }, [data]);
-
-  const hasCriticityData = chartData.some((x) => x.count > 0);
-  const hasSeriesData = series.some((x) => x.transactions > 0 || x.alertes > 0 || x.fraude_confirmee > 0);
-  const hasChannelData = channelData.length > 0;
 
   async function onSimulate() {
     try {
@@ -131,7 +126,7 @@ export function DashboardPage() {
             />
           </section>
 
-          {/* Main chart */}
+          {/* Main bar chart */}
           <section className="col-span-12 lg:col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Alertes par criticité (7 jours)</div>
@@ -141,84 +136,66 @@ export function DashboardPage() {
             <div className="h-[300px] rounded-2xl border border-white/10 bg-white/5 p-4">
               {loading ? (
                 <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
-              ) : !hasCriticityData ? (
-                <div className="h-full flex items-center justify-center text-white/50">
-                  Pas assez de données pour afficher la criticité.
-                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
                     <XAxis dataKey="criticite" stroke="rgba(255,255,255,0.6)" />
                     <YAxis stroke="rgba(255,255,255,0.6)" />
                     <Tooltip
                       contentStyle={{
-                        background: "rgba(10,25,50,0.95)",
+                        background: "rgba(10,25,50,0.9)",
                         border: "1px solid rgba(255,255,255,0.1)",
                         borderRadius: 12,
                         color: "white",
                       }}
                     />
-                    <Bar dataKey="count" fill="#2ec5ff" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="count" />
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
 
+            {/* mini charts */}
             <div className="grid grid-cols-12 gap-4 mt-5">
               <div className="col-span-12 md:col-span-6 rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="text-sm text-white/70 mb-2 font-semibold">Transactions / jour</div>
                 <div className="h-[140px]">
-                  {loading ? (
-                    <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
-                  ) : !hasSeriesData ? (
-                    <div className="h-full flex items-center justify-center text-white/50">Données insuffisantes.</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={series}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
-                        <YAxis stroke="rgba(255,255,255,0.4)" hide />
-                        <Tooltip
-                          contentStyle={{
-                            background: "rgba(10,25,50,0.9)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            borderRadius: 12,
-                            color: "white",
-                          }}
-                        />
-                        <Line type="monotone" dataKey="transactions" stroke="#2ec5ff" strokeWidth={2.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={series}>
+                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
+                      <YAxis stroke="rgba(255,255,255,0.4)" hide />
+                      <Tooltip
+                        contentStyle={{
+                          background: "rgba(10,25,50,0.9)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: 12,
+                          color: "white",
+                        }}
+                      />
+                      <Line type="monotone" dataKey="transactions" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
 
               <div className="col-span-12 md:col-span-6 rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="text-sm text-white/70 mb-2 font-semibold">Fraude confirmée / jour</div>
                 <div className="h-[140px]">
-                  {loading ? (
-                    <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
-                  ) : !hasSeriesData ? (
-                    <div className="h-full flex items-center justify-center text-white/50">Données insuffisantes.</div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={series}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
-                        <YAxis stroke="rgba(255,255,255,0.4)" hide />
-                        <Tooltip
-                          contentStyle={{
-                            background: "rgba(10,25,50,0.9)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            borderRadius: 12,
-                            color: "white",
-                          }}
-                        />
-                        <Line type="monotone" dataKey="fraude_confirmee" stroke="#00d084" strokeWidth={2.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={series}>
+                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
+                      <YAxis stroke="rgba(255,255,255,0.4)" hide />
+                      <Tooltip
+                        contentStyle={{
+                          background: "rgba(10,25,50,0.9)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: 12,
+                          color: "white",
+                        }}
+                      />
+                      <Line type="monotone" dataKey="taux_fraude" dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
             </div>
@@ -235,7 +212,7 @@ export function DashboardPage() {
               <table className="w-full text-sm min-w-[900px]">
                 <thead className="text-white/70">
                   <tr className="border-b border-white/10">
-                    <th className="text-left py-3">N°</th>
+                    <th className="text-left py-3">ID alerte</th>
                     <th className="text-left py-3">Date</th>
                     <th className="text-left py-3">Criticité</th>
                     <th className="text-left py-3">Statut</th>
@@ -244,16 +221,16 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.recent_alerts || []).map((a, index) => (
+                  {(data?.recent_alerts || []).map((a) => (
                     <tr key={a.idAlerte} className="border-b border-white/10">
-                      <td className="py-3 text-white/85 font-semibold">{index + 1}</td>
+                      <td className="py-3 text-white/85">{a.idAlerte.slice(0, 10)}…</td>
                       <td className="py-3 text-white/85">{new Date(a.date_creation).toLocaleString()}</td>
                       <td className="py-3">
                         <Badge criticite={a.criticite} />
                       </td>
                       <td className="py-3 text-white/85">{a.statut}</td>
                       <td className="py-3 text-white/85">{Number(a.score_final || 0).toFixed(4)}</td>
-                      <td className="py-3 text-white/85">T-{index + 1}</td>
+                      <td className="py-3 text-white/85">{(a.idTransac || "").slice(0, 10)}…</td>
                     </tr>
                   ))}
 
@@ -269,7 +246,7 @@ export function DashboardPage() {
             </div>
           </section>
 
-          {/* top reasons */}
+          {/* blocs pro ajoutés sans changer ton style */}
           <section className="col-span-12 lg:col-span-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Top reason codes</div>
@@ -296,7 +273,6 @@ export function DashboardPage() {
             </div>
           </section>
 
-          {/* channels */}
           <section className="col-span-12 lg:col-span-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Répartition par canal</div>
@@ -325,14 +301,9 @@ export function DashboardPage() {
             <div className="h-[220px] rounded-2xl border border-white/10 bg-white/5 p-4">
               {loading ? (
                 <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
-              ) : !hasChannelData ? (
-                <div className="h-full flex items-center justify-center text-white/50">
-                  Aucune donnée par canal.
-                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={channelData}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
                     <XAxis dataKey="canal" stroke="rgba(255,255,255,0.6)" />
                     <YAxis stroke="rgba(255,255,255,0.6)" />
                     <Tooltip
@@ -343,7 +314,7 @@ export function DashboardPage() {
                         color: "white",
                       }}
                     />
-                    <Bar dataKey="count" fill="#7c9cff" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="count" />
                   </BarChart>
                 </ResponsiveContainer>
               )}

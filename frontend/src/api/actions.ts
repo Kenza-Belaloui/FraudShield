@@ -1,7 +1,9 @@
 import { api } from "./client";
 
 export async function simulateFlux(count: number = 30) {
-  const res = await api.post("/transactions/simulate", null, { params: { count } });
+  const res = await api.post("/transactions/simulate", null, {
+    params: { count },
+  });
   return res.data;
 }
 

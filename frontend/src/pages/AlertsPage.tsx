@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AppShell } from "../layout/AppShell";
 import { useAuth } from "../auth/AuthContext";
@@ -15,7 +15,6 @@ export function AlertsPage() {
   const statut = sp.get("statut") || "";
   const search = sp.get("search") || "";
 
-  const [searchInput, setSearchInput] = useState(search);
   const [loading, setLoading] = useState(true);
   const [busySim, setBusySim] = useState(false);
   const [rows, setRows] = useState<AlertItem[]>([]);
@@ -45,10 +44,6 @@ export function AlertsPage() {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    setSearchInput(search);
-  }, [search]);
 
   useEffect(() => {
     load();
@@ -85,10 +80,6 @@ export function AlertsPage() {
     else next.set(key, value);
     next.set("page", "1");
     setSp(next);
-  }
-
-  function submitSearch() {
-    setParam("search", searchInput.trim());
   }
 
   function goto(p: number) {
@@ -154,23 +145,14 @@ export function AlertsPage() {
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 mb-5">
           <div className="grid grid-cols-12 gap-3">
             <div className="col-span-12 lg:col-span-5">
-              <div className="relative flex gap-2">
-                <div className="relative flex-1">
-                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50" />
-                  <input
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submitSearch()}
-                    placeholder="Rechercher par client ou transaction…"
-                    className="w-full rounded-xl pl-10 pr-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm text-white"
-                  />
-                </div>
-                <button
-                  onClick={submitSearch}
-                  className="rounded-xl px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
-                >
-                  Rechercher
-                </button>
+              <div className="relative">
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50" />
+                <input
+                  value={search}
+                  onChange={(e) => setParam("search", e.target.value)}
+                  placeholder="ID transaction, nom client…"
+                  className="w-full rounded-xl pl-10 pr-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm"
+                />
               </div>
             </div>
 
@@ -178,12 +160,12 @@ export function AlertsPage() {
               <select
                 value={criticite}
                 onChange={(e) => setParam("criticite", e.target.value)}
-                className="w-full rounded-xl px-4 py-3 bg-[#11284d] border border-white/10 outline-none text-sm text-white"
+                className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none text-sm"
               >
-                <option value="" className="bg-[#11284d] text-white">Criticité (toutes)</option>
-                <option value="FAIBLE" className="bg-[#11284d] text-white">Faible</option>
-                <option value="MOYEN" className="bg-[#11284d] text-white">Moyen</option>
-                <option value="ELEVE" className="bg-[#11284d] text-white">Élevé</option>
+                <option value="">Criticité (toutes)</option>
+                <option value="FAIBLE">Faible</option>
+                <option value="MOYEN">Moyen</option>
+                <option value="ELEVE">Élevé</option>
               </select>
             </div>
 
@@ -191,12 +173,12 @@ export function AlertsPage() {
               <select
                 value={statut}
                 onChange={(e) => setParam("statut", e.target.value)}
-                className="w-full rounded-xl px-4 py-3 bg-[#11284d] border border-white/10 outline-none text-sm text-white"
+                className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none text-sm"
               >
-                <option value="" className="bg-[#11284d] text-white">Statut (tous)</option>
-                <option value="OUVERTE" className="bg-[#11284d] text-white">Ouverte</option>
-                <option value="EN_COURS" className="bg-[#11284d] text-white">En cours</option>
-                <option value="CLOTUREE" className="bg-[#11284d] text-white">Clôturée</option>
+                <option value="">Statut (tous)</option>
+                <option value="OUVERTE">Ouverte</option>
+                <option value="EN_COURS">En cours</option>
+                <option value="CLOTUREE">Clôturée</option>
               </select>
             </div>
 
@@ -211,7 +193,7 @@ export function AlertsPage() {
             <table className="w-full text-sm min-w-[1100px]">
               <thead className="text-white/70">
                 <tr className="border-b border-white/10">
-                  <th className="text-left py-3">N°</th>
+                  <th className="text-left py-3">ID Transaction</th>
                   <th className="text-left py-3">Montant</th>
                   <th className="text-left py-3">Score</th>
                   <th className="text-left py-3">Criticité</th>
@@ -236,14 +218,10 @@ export function AlertsPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((a, index) => (
+                  rows.map((a) => (
                     <tr key={a.idAlerte} className="border-b border-white/10">
-                      <td className="py-3 text-white/85 font-semibold">
-                        {(page - 1) * pageSize + index + 1}
-                      </td>
-                      <td className="py-3 text-white/85">
-                        € {a.transaction.montant.toFixed(2)}
-                      </td>
+                      <td className="py-3 text-white/85">{a.transaction.idTransac.slice(0, 10)}…</td>
+                      <td className="py-3 text-white/85">€ {a.transaction.montant.toFixed(2)}</td>
                       <td className="py-3 text-white/85">
                         {a.score_final == null ? "—" : a.score_final.toFixed(4)}
                       </td>
@@ -376,7 +354,10 @@ function AlertDrawer({
 
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
               <div className="text-white/70 text-sm mb-2">Transaction</div>
-              <div className="text-white/90 text-sm">Montant: € {alert.transaction.montant.toFixed(2)} {alert.transaction.devise}</div>
+              <div className="text-white/90 text-sm">ID: {alert.transaction.idTransac}</div>
+              <div className="text-white/90 text-sm">
+                Montant: € {alert.transaction.montant.toFixed(2)} {alert.transaction.devise}
+              </div>
               <div className="text-white/90 text-sm">Canal: {alert.transaction.canal}</div>
               <div className="text-white/90 text-sm">Statut transaction: {alert.transaction.statut}</div>
               <div className="text-white/90 text-sm">Date: {new Date(alert.transaction.date_heure).toLocaleString()}</div>
