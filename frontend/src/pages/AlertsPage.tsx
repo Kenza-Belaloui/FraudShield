@@ -2,8 +2,14 @@
 import { useSearchParams } from "react-router-dom";
 import { AppShell } from "../layout/AppShell";
 import { useAuth } from "../auth/AuthContext";
-import { getAlert, listAlerts, takeAlert, type AlertDetail, type AlertItem } from "../api/alerts";
-import { simulateFlux, downloadAlertsCsv } from "../api/actions";
+import {
+  getAlert,
+  listAlerts,
+  takeAlert,
+  type AlertDetail,
+  type AlertItem,
+} from "../api/alerts";
+import { simulateFlux, downloadAlertsPdf } from "../api/actions";
 import { Search, Download, Plus } from "lucide-react";
 
 export function AlertsPage() {
@@ -15,6 +21,7 @@ export function AlertsPage() {
   const statut = sp.get("statut") || "";
   const search = sp.get("search") || "";
 
+  const [searchInput, setSearchInput] = useState(search);
   const [loading, setLoading] = useState(true);
   const [busySim, setBusySim] = useState(false);
   const [rows, setRows] = useState<AlertItem[]>([]);
@@ -38,41 +45,25 @@ export function AlertsPage() {
         statut: statut || undefined,
         search: search || undefined,
       });
-      setRows(res.items);
-      setTotal(res.total);
+      setRows(res.items || []);
+      setTotal(res.total || 0);
+    } catch (error) {
+      console.error("Erreur chargement alertes:", error);
+      setRows([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
+    setSearchInput(search);
+  }, [search]);
+
+  useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, criticite, statut, search]);
-
-  async function openDetail(id: string) {
-    setSelectedId(id);
-    setLoadingDetail(true);
-    try {
-      const detail = await getAlert(id);
-      setSelected(detail);
-    } finally {
-      setLoadingDetail(false);
-    }
-  }
-
-  async function handleTakeAlert() {
-    if (!selectedId) return;
-    try {
-      setTaking(true);
-      await takeAlert(selectedId);
-      const refreshed = await getAlert(selectedId);
-      setSelected(refreshed);
-      await load();
-    } finally {
-      setTaking(false);
-    }
-  }
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(sp);
@@ -80,6 +71,10 @@ export function AlertsPage() {
     else next.set(key, value);
     next.set("page", "1");
     setSp(next);
+  }
+
+  function submitSearch() {
+    setParam("search", searchInput.trim());
   }
 
   function goto(p: number) {
@@ -98,8 +93,49 @@ export function AlertsPage() {
     }
   }
 
-  async function onExport() {
-    await downloadAlertsCsv();
+    async function onExport() {
+      downloadAlertsPdf(
+        rows.map((a, index) => ({
+          numero: (page - 1) * pageSize + index + 1,
+          criticite: a.criticite,
+          statut: a.statut,
+          score: a.score_final == null ? "—" : a.score_final.toFixed(4),
+          client: `${a.client.nom} ${a.client.prenom || ""}`.trim(),
+          commercant: a.commercant.nom,
+          montant: `${a.transaction.montant.toFixed(2)} ${a.transaction.devise}`,
+          canal: a.transaction.canal,
+          date: new Date(a.date_creation).toLocaleString(),
+        }))
+      );
+    }
+
+  async function openDetail(id: string) {
+    setSelectedId(id);
+    setLoadingDetail(true);
+    try {
+      const detail = await getAlert(id);
+      setSelected(detail);
+    } catch (error) {
+      console.error("Erreur détail alerte:", error);
+      setSelected(null);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }
+
+  async function handleTakeAlert() {
+    if (!selectedId) return;
+    try {
+      setTaking(true);
+      await takeAlert(selectedId);
+      const refreshed = await getAlert(selectedId);
+      setSelected(refreshed);
+      await load();
+    } catch (error) {
+      console.error("Erreur prise en charge:", error);
+    } finally {
+      setTaking(false);
+    }
   }
 
   return (
@@ -128,7 +164,7 @@ export function AlertsPage() {
               className="inline-flex items-center gap-2 rounded-xl px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
             >
               <Download size={16} />
-              Extraire CSV
+              Exporter PDF
             </button>
 
             <button
@@ -145,14 +181,24 @@ export function AlertsPage() {
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-4 mb-5">
           <div className="grid grid-cols-12 gap-3">
             <div className="col-span-12 lg:col-span-5">
-              <div className="relative">
-                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50" />
-                <input
-                  value={search}
-                  onChange={(e) => setParam("search", e.target.value)}
-                  placeholder="ID transaction, nom client…"
-                  className="w-full rounded-xl pl-10 pr-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm"
-                />
+              <div className="relative flex gap-2">
+                <div className="relative flex-1">
+                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/50" />
+                  <input
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && submitSearch()}
+                    placeholder="Rechercher par client ou transaction…"
+                    className="w-full rounded-xl pl-10 pr-4 py-3 bg-white/5 border border-white/10 outline-none placeholder:text-white/40 text-sm text-white"
+                  />
+                </div>
+
+                <button
+                  onClick={submitSearch}
+                  className="rounded-xl px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 transition text-sm"
+                >
+                  Rechercher
+                </button>
               </div>
             </div>
 
@@ -160,12 +206,12 @@ export function AlertsPage() {
               <select
                 value={criticite}
                 onChange={(e) => setParam("criticite", e.target.value)}
-                className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none text-sm"
+                className="w-full rounded-xl px-4 py-3 bg-[#11284d] border border-white/10 outline-none text-sm text-white"
               >
-                <option value="">Criticité (toutes)</option>
-                <option value="FAIBLE">Faible</option>
-                <option value="MOYEN">Moyen</option>
-                <option value="ELEVE">Élevé</option>
+                <option value="" className="bg-[#11284d] text-white">Criticité (toutes)</option>
+                <option value="FAIBLE" className="bg-[#11284d] text-white">Faible</option>
+                <option value="MOYEN" className="bg-[#11284d] text-white">Moyen</option>
+                <option value="ELEVE" className="bg-[#11284d] text-white">Élevé</option>
               </select>
             </div>
 
@@ -173,12 +219,12 @@ export function AlertsPage() {
               <select
                 value={statut}
                 onChange={(e) => setParam("statut", e.target.value)}
-                className="w-full rounded-xl px-4 py-3 bg-white/5 border border-white/10 outline-none text-sm"
+                className="w-full rounded-xl px-4 py-3 bg-[#11284d] border border-white/10 outline-none text-sm text-white"
               >
-                <option value="">Statut (tous)</option>
-                <option value="OUVERTE">Ouverte</option>
-                <option value="EN_COURS">En cours</option>
-                <option value="CLOTUREE">Clôturée</option>
+                <option value="" className="bg-[#11284d] text-white">Statut (tous)</option>
+                <option value="OUVERTE" className="bg-[#11284d] text-white">Ouverte</option>
+                <option value="EN_COURS" className="bg-[#11284d] text-white">En cours</option>
+                <option value="CLOTUREE" className="bg-[#11284d] text-white">Clôturée</option>
               </select>
             </div>
 
@@ -193,7 +239,7 @@ export function AlertsPage() {
             <table className="w-full text-sm min-w-[1100px]">
               <thead className="text-white/70">
                 <tr className="border-b border-white/10">
-                  <th className="text-left py-3">ID Transaction</th>
+                  <th className="text-left py-3">N°</th>
                   <th className="text-left py-3">Montant</th>
                   <th className="text-left py-3">Score</th>
                   <th className="text-left py-3">Criticité</th>
@@ -218,9 +264,11 @@ export function AlertsPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((a) => (
+                  rows.map((a, index) => (
                     <tr key={a.idAlerte} className="border-b border-white/10">
-                      <td className="py-3 text-white/85">{a.transaction.idTransac.slice(0, 10)}…</td>
+                      <td className="py-3 text-white/85 font-semibold">
+                        {(page - 1) * pageSize + index + 1}
+                      </td>
                       <td className="py-3 text-white/85">€ {a.transaction.montant.toFixed(2)}</td>
                       <td className="py-3 text-white/85">
                         {a.score_final == null ? "—" : a.score_final.toFixed(4)}
@@ -352,77 +400,11 @@ function AlertDrawer({
               <div className="text-white/90">{alert.statut}</div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-              <div className="text-white/70 text-sm mb-2">Transaction</div>
-              <div className="text-white/90 text-sm">ID: {alert.transaction.idTransac}</div>
-              <div className="text-white/90 text-sm">
-                Montant: € {alert.transaction.montant.toFixed(2)} {alert.transaction.devise}
-              </div>
-              <div className="text-white/90 text-sm">Canal: {alert.transaction.canal}</div>
-              <div className="text-white/90 text-sm">Statut transaction: {alert.transaction.statut}</div>
-              <div className="text-white/90 text-sm">Date: {new Date(alert.transaction.date_heure).toLocaleString()}</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-              <div className="text-white/70 text-sm mb-2">Client & commerçant</div>
-              <div className="text-white/90 text-sm">
-                Client: {alert.client.nom} {alert.client.prenom || ""}
-              </div>
-              <div className="text-white/90 text-sm">Commerçant: {alert.commercant.nom}</div>
-              {alert.commercant.categorie && (
-                <div className="text-white/90 text-sm">Catégorie: {alert.commercant.categorie}</div>
-              )}
-              {alert.commercant.pays && (
-                <div className="text-white/90 text-sm">Pays: {alert.commercant.pays}</div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-              <div className="text-white/70 text-sm mb-2">Reason codes</div>
-              {!alert.reason_details?.length ? (
-                <div className="text-white/60 text-sm">—</div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {alert.reason_details.map((r) => (
-                    <span
-                      key={r.code}
-                      className="text-xs rounded-full px-3 py-1 bg-white/5 border border-white/10 text-white/85"
-                      title={r.code}
-                    >
-                      {r.label}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
-              <div className="text-white/70 text-sm mb-2">Raison</div>
-              <div className="text-white/90 text-sm whitespace-pre-wrap">{alert.raison || "—"}</div>
-            </div>
-
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-white/70 text-sm mb-3">Historique analyste</div>
-              {!alert.validations?.length ? (
-                <div className="text-white/60 text-sm">Aucune validation enregistrée.</div>
-              ) : (
-                <div className="space-y-3">
-                  {alert.validations.map((v) => (
-                    <div key={v.idValidation} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <div className="text-sm text-white/90 font-semibold">{v.decision}</div>
-                        <div className="text-xs text-white/50">
-                          {v.date_creation ? new Date(v.date_creation).toLocaleString() : "—"}
-                        </div>
-                      </div>
-                      <div className="text-sm text-white/70">{v.commentaire}</div>
-                      <div className="text-xs text-white/50 mt-2">
-                        {v.utilisateur?.nom_complet || "Utilisateur inconnu"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="text-white/70 text-sm mb-2">Transaction</div>
+              <div className="text-white/90 text-sm">Montant: € {alert.transaction.montant.toFixed(2)} {alert.transaction.devise}</div>
+              <div className="text-white/90 text-sm">Canal: {alert.transaction.canal}</div>
+              <div className="text-white/90 text-sm">Date: {new Date(alert.transaction.date_heure).toLocaleString()}</div>
             </div>
           </>
         )}

@@ -25,6 +25,10 @@ export function TransactionsPage() {
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  function rowNumber(index: number) {
+    return (page - 1) * pageSize + index + 1;
+  }
+
   async function load() {
     setLoading(true);
     try {
@@ -109,11 +113,11 @@ export function TransactionsPage() {
               <table className="w-full text-sm table-fixed">
                 <thead className="text-white/70">
                   <tr className="border-b border-white/10">
-                    <th className="text-left py-3 w-[14%]">N°</th>
-                    <th className="text-left py-3 w-[22%]">Client</th>
+                    <th className="text-left py-3 w-[10%]">N°</th>
+                    <th className="text-left py-3 w-[24%]">Client</th>
                     <th className="text-left py-3 w-[14%]">Canal</th>
                     <th className="text-left py-3 w-[16%]">Montant</th>
-                    <th className="text-left py-3 w-[20%]">Commerçant</th>
+                    <th className="text-left py-3 w-[22%]">Commerçant</th>
                     <th className="text-left py-3 w-[14%]">Statut</th>
                     <th className="text-right py-3 w-[10%]">Action</th>
                   </tr>
@@ -133,9 +137,9 @@ export function TransactionsPage() {
                       </td>
                     </tr>
                   ) : (
-                    rows.map((t) => (
+                    rows.map((t, index) => (
                       <tr key={t.idTransac} className="border-b border-white/10">
-                        <td className="py-3 text-white/85 truncate">{(page - 1) * pageSize + index + 1}</td>
+                        <td className="py-3 text-white/85 truncate">{rowNumber(index)}</td>
                         <td className="py-3 text-white/85 truncate">
                           {t.client ? `${t.client.nom} ${t.client.prenom || ""}` : "—"}
                         </td>
@@ -173,7 +177,9 @@ export function TransactionsPage() {
                         <div className="text-white/85 font-semibold truncate">
                           {t.client ? `${t.client.nom} ${t.client.prenom || ""}` : "—"}
                         </div>
-                        <div className="text-white/60 text-xs truncate">Transaction n° {(page - 1) * pageSize + index + 1}</div>
+                        <div className="text-white/60 text-xs truncate">
+                          Transaction n° {rowNumber(index)}
+                        </div>
                       </div>
                       <StatusBadge statut={t.statut} />
                     </div>
@@ -323,6 +329,23 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
 
   const idAlerte: string | null = tx?.alerte?.idAlerte || null;
 
+  const featureLabels: Record<string, string> = {
+    Amount: "Montant",
+    is_debit: "Opération débit",
+    nb_tx_24h: "Nombre de transactions sur 24h",
+    heure_nuit: "Transaction nocturne",
+    is_cash_in: "Type cash in",
+    is_payment: "Type paiement",
+    client_pays: "Pays du client",
+    is_cash_out: "Type cash out",
+    is_transfer: "Type transfert",
+    ratio_revenu: "Ratio montant / revenu",
+    avg_amount_7d: "Montant moyen sur 7 jours",
+    client_segment: "Segment client",
+    isFlaggedFraud: "Fraude signalée",
+    depasse_plafond: "Dépassement du plafond",
+  };
+
   async function decide(decision: "LEGITIME" | "FRAUDE") {
     if (!idAlerte) {
       setMsg("Aucune alerte liée à cette transaction.");
@@ -348,7 +371,7 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
   return (
     <div className="space-y-4">
       <div className="text-white/70 text-sm">
-        #{tx.idTransac.slice(0, 10)} • {new Date(tx.date_heure).toLocaleString()}
+        Détail transaction • {new Date(tx.date_heure).toLocaleString()}
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -475,19 +498,19 @@ function TxDetails({ tx, cardImg }: { tx: any; cardImg: string }) {
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-white/70 text-sm mb-2">Features</div>
+        <div className="text-white/70 text-sm mb-2">Indicateurs d’analyse</div>
         {!features ? (
           <div className="text-white/60 text-sm">—</div>
         ) : (
           <div className="text-xs text-white/80 space-y-1">
-            {Object.entries(features)
-              .slice(0, 14)
-              .map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between gap-3">
-                  <div className="text-white/60">{k}</div>
-                  <div className="text-white/90 truncate">{String(v)}</div>
+            {Object.entries(features).slice(0, 12).map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between gap-3">
+                <div className="text-white/60">{featureLabels[k] || k}</div>
+                <div className="text-white/90 truncate">
+                  {typeof v === "number" ? Number(v).toFixed(2) : String(v)}
                 </div>
-              ))}
+              </div>
+            ))}
           </div>
         )}
       </div>

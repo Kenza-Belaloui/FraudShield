@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  CartesianGrid,
 } from "recharts";
 
 export function DashboardPage() {
@@ -31,6 +32,10 @@ export function DashboardPage() {
       const [s, ts] = await Promise.all([getDashboardSummary(), getDashboardTimeseries(7)]);
       setData(s);
       setSeries(ts.series || []);
+    } catch (error) {
+      console.error("Dashboard load error:", error);
+      setData(null);
+      setSeries([]);
     } finally {
       setLoading(false);
     }
@@ -49,13 +54,8 @@ export function DashboardPage() {
     ];
   }, [data]);
 
-  const channelData = useMemo(() => {
-    const c = data?.transactions_by_channel_7j || {};
-    return Object.entries(c).map(([canal, count]) => ({
-      canal,
-      count,
-    }));
-  }, [data]);
+  const hasCriticityData = chartData.some((x) => x.count > 0);
+  const hasSeriesData = Array.isArray(series) && series.length > 0;
 
   async function onSimulate() {
     try {
@@ -105,7 +105,6 @@ export function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-12 gap-6">
-          {/* KPI */}
           <section className="col-span-12 lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5">
             <div className="text-sm text-white/70 mb-3 font-semibold flex items-center justify-between">
               <span>Indicateurs clés</span>
@@ -126,7 +125,6 @@ export function DashboardPage() {
             />
           </section>
 
-          {/* Main bar chart */}
           <section className="col-span-12 lg:col-span-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Alertes par criticité (7 jours)</div>
@@ -136,72 +134,89 @@ export function DashboardPage() {
             <div className="h-[300px] rounded-2xl border border-white/10 bg-white/5 p-4">
               {loading ? (
                 <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+              ) : !hasCriticityData ? (
+                <div className="h-full flex items-center justify-center text-white/50">
+                  Pas assez de données pour afficher la criticité.
+                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
                     <XAxis dataKey="criticite" stroke="rgba(255,255,255,0.6)" />
                     <YAxis stroke="rgba(255,255,255,0.6)" />
                     <Tooltip
                       contentStyle={{
-                        background: "rgba(10,25,50,0.9)",
+                        background: "rgba(10,25,50,0.95)",
                         border: "1px solid rgba(255,255,255,0.1)",
                         borderRadius: 12,
                         color: "white",
                       }}
                     />
-                    <Bar dataKey="count" />
+                    <Bar dataKey="count" fill="#2ec5ff" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
 
-            {/* mini charts */}
             <div className="grid grid-cols-12 gap-4 mt-5">
               <div className="col-span-12 md:col-span-6 rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="text-sm text-white/70 mb-2 font-semibold">Transactions / jour</div>
                 <div className="h-[140px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={series}>
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
-                      <YAxis stroke="rgba(255,255,255,0.4)" hide />
-                      <Tooltip
-                        contentStyle={{
-                          background: "rgba(10,25,50,0.9)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: 12,
-                          color: "white",
-                        }}
-                      />
-                      <Line type="monotone" dataKey="transactions" dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  {loading ? (
+                    <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+                  ) : !hasSeriesData ? (
+                    <div className="h-full flex items-center justify-center text-white/50">Données insuffisantes.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={series}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
+                        <YAxis stroke="rgba(255,255,255,0.4)" hide />
+                        <Tooltip
+                          contentStyle={{
+                            background: "rgba(10,25,50,0.9)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            borderRadius: 12,
+                            color: "white",
+                          }}
+                        />
+                        <Line type="monotone" dataKey="transactions" stroke="#2ec5ff" strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
 
               <div className="col-span-12 md:col-span-6 rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="text-sm text-white/70 mb-2 font-semibold">Fraude confirmée / jour</div>
                 <div className="h-[140px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={series}>
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
-                      <YAxis stroke="rgba(255,255,255,0.4)" hide />
-                      <Tooltip
-                        contentStyle={{
-                          background: "rgba(10,25,50,0.9)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: 12,
-                          color: "white",
-                        }}
-                      />
-                      <Line type="monotone" dataKey="taux_fraude" dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  {loading ? (
+                    <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
+                  ) : !hasSeriesData ? (
+                    <div className="h-full flex items-center justify-center text-white/50">Données insuffisantes.</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={series}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" hide />
+                        <YAxis stroke="rgba(255,255,255,0.4)" hide />
+                        <Tooltip
+                          contentStyle={{
+                            background: "rgba(10,25,50,0.9)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            borderRadius: 12,
+                            color: "white",
+                          }}
+                        />
+                        <Line type="monotone" dataKey="fraude_confirmee" stroke="#00d084" strokeWidth={2.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
             </div>
           </section>
 
-          {/* Recent alerts */}
           <section className="col-span-12 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Alertes récentes</div>
@@ -212,7 +227,7 @@ export function DashboardPage() {
               <table className="w-full text-sm min-w-[900px]">
                 <thead className="text-white/70">
                   <tr className="border-b border-white/10">
-                    <th className="text-left py-3">ID alerte</th>
+                    <th className="text-left py-3">N°</th>
                     <th className="text-left py-3">Date</th>
                     <th className="text-left py-3">Criticité</th>
                     <th className="text-left py-3">Statut</th>
@@ -221,16 +236,16 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.recent_alerts || []).map((a) => (
+                  {(data?.recent_alerts || []).map((a, index) => (
                     <tr key={a.idAlerte} className="border-b border-white/10">
-                      <td className="py-3 text-white/85">{a.idAlerte.slice(0, 10)}…</td>
+                      <td className="py-3 text-white/85 font-semibold">{index + 1}</td>
                       <td className="py-3 text-white/85">{new Date(a.date_creation).toLocaleString()}</td>
                       <td className="py-3">
                         <Badge criticite={a.criticite} />
                       </td>
                       <td className="py-3 text-white/85">{a.statut}</td>
                       <td className="py-3 text-white/85">{Number(a.score_final || 0).toFixed(4)}</td>
-                      <td className="py-3 text-white/85">{(a.idTransac || "").slice(0, 10)}…</td>
+                      <td className="py-3 text-white/85">T-{index + 1}</td>
                     </tr>
                   ))}
 
@@ -243,81 +258,6 @@ export function DashboardPage() {
                   )}
                 </tbody>
               </table>
-            </div>
-          </section>
-
-          {/* blocs pro ajoutés sans changer ton style */}
-          <section className="col-span-12 lg:col-span-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-lg font-semibold">Top reason codes</div>
-              <div className="text-white/60 text-sm">Signaux dominants</div>
-            </div>
-
-            <div className="space-y-3">
-              {(data?.top_reason_codes || []).map((r) => (
-                <div
-                  key={r.code}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 flex items-center justify-between"
-                >
-                  <div>
-                    <div className="text-white/90 text-sm font-medium">{r.label}</div>
-                    <div className="text-white/45 text-xs mt-1">{r.code}</div>
-                  </div>
-                  <div className="text-white font-semibold">{r.count}</div>
-                </div>
-              ))}
-
-              {!loading && (data?.top_reason_codes || []).length === 0 && (
-                <div className="text-white/60 text-sm">Aucune donnée disponible.</div>
-              )}
-            </div>
-          </section>
-
-          <section className="col-span-12 lg:col-span-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-lg font-semibold">Répartition par canal</div>
-              <div className="text-white/60 text-sm">POS • E_COMMERCE • DAB</div>
-            </div>
-
-            <div className="grid grid-cols-12 gap-4 mb-5">
-              <MiniInfo
-                label="Taux d'alerte 7j"
-                value={`${(data?.taux_alerte_7j ?? 0).toFixed(2)} %`}
-              />
-              <MiniInfo
-                label="Faux positifs 7j"
-                value={`${(data?.taux_faux_positifs_7j ?? 0).toFixed(2)} %`}
-              />
-              <MiniInfo
-                label="Fraudes confirmées"
-                value={data?.confirmed_fraud_7d ?? 0}
-              />
-              <MiniInfo
-                label="Légitimes confirmées"
-                value={data?.confirmed_legit_7d ?? 0}
-              />
-            </div>
-
-            <div className="h-[220px] rounded-2xl border border-white/10 bg-white/5 p-4">
-              {loading ? (
-                <div className="h-full flex items-center justify-center text-white/60">Chargement…</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={channelData}>
-                    <XAxis dataKey="canal" stroke="rgba(255,255,255,0.6)" />
-                    <YAxis stroke="rgba(255,255,255,0.6)" />
-                    <Tooltip
-                      contentStyle={{
-                        background: "rgba(10,25,50,0.9)",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 12,
-                        color: "white",
-                      }}
-                    />
-                    <Bar dataKey="count" />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
             </div>
           </section>
         </div>
@@ -348,15 +288,6 @@ function Kpi({
     <div className={`rounded-2xl border border-white/10 ${bg} p-5 mb-4`}>
       <div className="text-xs text-white/70 mb-2">{title}</div>
       <div className="text-2xl font-bold">{value}</div>
-    </div>
-  );
-}
-
-function MiniInfo({ label, value }: { label: string; value: any }) {
-  return (
-    <div className="col-span-6 rounded-xl border border-white/10 bg-white/5 p-4">
-      <div className="text-xs text-white/60 mb-2">{label}</div>
-      <div className="text-lg font-bold text-white">{value}</div>
     </div>
   );
 }

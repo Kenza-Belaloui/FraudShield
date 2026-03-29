@@ -132,6 +132,77 @@ def list_alerts(
     return {"items": items, "page": page, "page_size": page_size, "total": total}
 
 
+@router.get("/export.csv")
+def export_alerts_csv(
+    criticite: str | None = None,
+    statut: str | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    q = (
+        db.query(models.Alerte)
+        .join(models.Transaction, models.Alerte.idtransac == models.Transaction.idtransac)
+        .join(models.Client, models.Transaction.idclient == models.Client.idclient)
+        .join(models.Commercant, models.Transaction.idcommercant == models.Commercant.idcommercant)
+        .order_by(desc(models.Alerte.date_creation))
+    )
+    if criticite:
+        q = q.filter(models.Alerte.criticite == criticite)
+    if statut:
+        q = q.filter(models.Alerte.statut == statut)
+
+    rows = q.limit(5000).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "idAlerte",
+        "date_creation",
+        "date_cloture",
+        "criticite",
+        "statut",
+        "score_final",
+        "idTransac",
+        "transaction_statut",
+        "client",
+        "commercant",
+        "montant",
+        "devise",
+        "canal",
+    ])
+
+    for a in rows:
+        t = a.transaction
+        c = t.client
+        m = t.commercant
+        score_final = ""
+        if a.prediction_principale:
+            score_final = float(a.prediction_principale.score_risque)
+
+        writer.writerow([
+            str(a.idalerte),
+            a.date_creation.isoformat(),
+            a.date_cloture.isoformat() if a.date_cloture else "",
+            a.criticite,
+            a.statut,
+            score_final,
+            str(t.idtransac),
+            t.statut,
+            f"{c.nom} {c.prenom or ''}".strip(),
+            m.nom,
+            float(t.montant),
+            t.devise,
+            t.canal,
+        ])
+
+    output.seek(0)
+    filename = "fraudshield_alerts_export.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 @router.get("/{idalerte}")
 def get_alert_detail(
     idalerte: str,
@@ -222,75 +293,3 @@ def take_alert(
         "statut": a.statut,
         "message": f"Alerte prise en charge par {current_user.nom_complet}",
     }
-
-
-@router.get("/export.csv")
-def export_alerts_csv(
-    criticite: str | None = None,
-    statut: str | None = None,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    q = (
-        db.query(models.Alerte)
-        .join(models.Transaction, models.Alerte.idtransac == models.Transaction.idtransac)
-        .join(models.Client, models.Transaction.idclient == models.Client.idclient)
-        .join(models.Commercant, models.Transaction.idcommercant == models.Commercant.idcommercant)
-        .order_by(desc(models.Alerte.date_creation))
-    )
-    if criticite:
-        q = q.filter(models.Alerte.criticite == criticite)
-    if statut:
-        q = q.filter(models.Alerte.statut == statut)
-
-    rows = q.limit(5000).all()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "idAlerte",
-        "date_creation",
-        "date_cloture",
-        "criticite",
-        "statut",
-        "score_final",
-        "idTransac",
-        "transaction_statut",
-        "client",
-        "commercant",
-        "montant",
-        "devise",
-        "canal",
-    ])
-
-    for a in rows:
-        t = a.transaction
-        c = t.client
-        m = t.commercant
-        score_final = ""
-        if a.prediction_principale:
-            score_final = float(a.prediction_principale.score_risque)
-
-        writer.writerow([
-            str(a.idalerte),
-            a.date_creation.isoformat(),
-            a.date_cloture.isoformat() if a.date_cloture else "",
-            a.criticite,
-            a.statut,
-            score_final,
-            str(t.idtransac),
-            t.statut,
-            f"{c.nom} {c.prenom or ''}".strip(),
-            m.nom,
-            float(t.montant),
-            t.devise,
-            t.canal,
-        ])
-
-    output.seek(0)
-    filename = "fraudshield_alerts_export.csv"
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
